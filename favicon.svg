@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1976d2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1565c0;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="64" height="64" rx="14" fill="url(#bg-gradient)"/>
+
+  <!-- Globe outline circle -->
+  <circle cx="32" cy="32" r="28" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.5"/>
+
+  <!-- Vertical meridian lines (longitude) -->
+  <ellipse cx="32" cy="32" rx="10" ry="28" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
+  <ellipse cx="32" cy="32" rx="21" ry="28" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Horizontal parallel lines (latitude) -->
+  <ellipse cx="32" cy="32" rx="28" ry="10" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
+  <ellipse cx="32" cy="32" rx="28" ry="21" fill="none" stroke="#ffffff" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Network endpoint dots (inside globe) -->
+  <circle cx="16" cy="16" r="2" fill="#ffffff" opacity="0.7"/>
+  <circle cx="48" cy="16" r="2" fill="#ffffff" opacity="0.7"/>
+  <circle cx="16" cy="48" r="2" fill="#ffffff" opacity="0.7"/>
+  <circle cx="48" cy="48" r="2" fill="#ffffff" opacity="0.7"/>
+
+  <!-- Connection lines from center to network dots -->
+  <line x1="32" y1="32" x2="16" y2="16" stroke="#ffffff" stroke-width="1.5" opacity="0.5"/>
+  <line x1="32" y1="32" x2="48" y2="16" stroke="#ffffff" stroke-width="1.5" opacity="0.5"/>
+  <line x1="32" y1="32" x2="16" y2="48" stroke="#ffffff" stroke-width="1.5" opacity="0.5"/>
+  <line x1="32" y1="32" x2="48" y2="48" stroke="#ffffff" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Central image icon (CDN hub) -->
+  <g transform="translate(22, 22)">
+    <!-- Photo frame background -->
+    <rect x="0" y="0" width="20" height="20" rx="2" fill="#ffffff"/>
+
+    <!-- Mountains inside -->
+    <path d="M 1 18 L 6 10 L 11 18 Z" fill="#1976d2" opacity="1"/>
+    <path d="M 8 18 L 13 8 L 19 18 Z" fill="#1976d2" opacity="0.95"/>
+
+    <!-- Sun circle -->
+    <circle cx="15" cy="6" r="2" fill="#1976d2" opacity="1"/>
+  </g>
+</svg>

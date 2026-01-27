@@ -1,0 +1,50 @@
+---
+title: Update Preset
+api: PUT /api/v1/settings/presets/{id}
+description: Update an existing transformation preset (Pro only)
+---
+
+<Note>
+  This endpoint requires a Pro plan subscription.
+</Note>
+
+<RequestExample>
+```bash cURL
+curl -X PUT https://api.img-src.io/api/v1/settings/presets/preset_abc123 \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated thumbnail preset",
+    "params": {
+      "w": 250,
+      "h": 250,
+      "fit": "cover",
+      "format": "webp",
+      "q": 85
+    }
+  }'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 OK
+{
+  "id": "preset_abc123",
+  "name": "thumbnail",
+  "description": "Updated thumbnail preset",
+  "params": {
+    "w": 250,
+    "h": 250,
+    "fit": "cover",
+    "format": "webp",
+    "q": 85
+  },
+  "created_at": 1704067200,
+  "updated_at": 1704153600
+}
+```
+</ResponseExample>
+
+<Warning>
+  Updating a preset affects all future requests using that preset name. Cached images are not affected.
+</Warning>

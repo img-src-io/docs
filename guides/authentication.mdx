@@ -1,0 +1,278 @@
+---
+title: Authentication
+description: "Learn how to authenticate with the img-src API"
+---
+
+# Authentication
+
+img-src uses API keys for authentication. This guide covers how to create, use, and manage your API keys.
+
+## Getting an API Key
+
+1. Sign in to [img-src.io](https://img-src.io)
+2. Navigate to [Settings](https://img-src.io/settings)
+3. Click **Create API Key**
+4. Enter a name for your key
+5. Choose the scopes (permissions)
+6. Optionally set an expiration
+7. Copy the key immediately
+
+<Warning>
+  The full API key is only shown once. If you lose it, you'll need to create a new one.
+</Warning>
+
+## API Key Format
+
+API keys have the format:
+
+```
+imgsrc_a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8s9T0u1V2w3X4
+```
+
+- Prefix: `imgsrc_` (always)
+- Length: 56 characters total
+- Characters: alphanumeric
+
+## Using Your API Key
+
+Include the API key in the `Authorization` header:
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.img-src.io/api/v1/images \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+```typescript TypeScript
+const client = new ImgSrc({
+  apiKey: 'imgsrc_YOUR_API_KEY'
+});
+```
+
+```python Python
+client = ImgSrc(api_key="imgsrc_YOUR_API_KEY")
+```
+
+```go Go
+client := imgsrc.NewClient("imgsrc_YOUR_API_KEY")
+```
+
+```rust Rust
+let client = Client::new("imgsrc_YOUR_API_KEY");
+```
+
+</CodeGroup>
+
+## Scopes
+
+API keys can have different permission scopes:
+
+| Scope | Permissions |
+|-------|-------------|
+| `read` | List images, get metadata, view settings |
+| `write` | Upload images, delete images, update settings |
+
+By default, new keys have both `read` and `write` scopes.
+
+### Creating a Read-Only Key
+
+For applications that only need to list or display images:
+
+```bash
+curl -X POST https://api.img-src.io/api/v1/settings/api-keys \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Read-only analytics",
+    "scopes": ["read"]
+  }'
+```
+
+## Key Expiration
+
+Set an expiration for temporary access:
+
+```bash
+curl -X POST https://api.img-src.io/api/v1/settings/api-keys \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Temporary CI key",
+    "expires_in_days": 30
+  }'
+```
+
+Maximum expiration is 365 days. Keys without expiration never expire.
+
+## Revoking Keys
+
+Delete a key to immediately revoke access:
+
+```bash
+curl -X DELETE https://api.img-src.io/api/v1/settings/api-keys/{key_id} \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Never expose keys in client-side code">
+    API keys should only be used in server-side code. For client-side applications, use a backend proxy.
+  </Accordion>
+
+  <Accordion title="Use environment variables">
+    Store API keys in environment variables, not in code.
+
+    **Recommended environment variable name:** `IMGSRC_API_KEY`
+
+    ```bash
+    # Shell
+    export IMGSRC_API_KEY=imgsrc_YOUR_API_KEY
+    ```
+
+    ```env
+    # .env file
+    IMGSRC_API_KEY=imgsrc_YOUR_API_KEY
+    ```
+
+    ```typescript
+    // TypeScript/JavaScript
+    const client = new ImgSrc({
+      apiKey: process.env.IMGSRC_API_KEY
+    });
+    ```
+
+    ```python
+    # Python
+    client = ImgSrc(api_key=os.environ["IMGSRC_API_KEY"])
+    ```
+
+    ```go
+    // Go
+    client := imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+    ```
+
+    ```rust
+    // Rust - from_env() reads IMGSRC_API_KEY automatically
+    let client = Client::from_env()?;
+    ```
+  </Accordion>
+
+  <Accordion title="Rotate keys regularly">
+    Create new keys periodically and delete old ones. This limits the impact if a key is compromised.
+  </Accordion>
+
+  <Accordion title="Use minimal scopes">
+    Only grant the permissions each key needs. A key for displaying images only needs `read` scope.
+  </Accordion>
+
+  <Accordion title="Set expiration for temporary access">
+    For CI/CD, contractors, or temporary integrations, always set an expiration date.
+  </Accordion>
+
+  <Accordion title="Monitor key usage">
+    Check `last_used_at` and `total_requests` to detect unauthorized usage:
+
+    ```bash
+    curl https://api.img-src.io/api/v1/settings/api-keys \
+      -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## CDN Authentication
+
+Images served via CDN URLs don't require authentication:
+
+```html
+<!-- No auth needed for public images -->
+<img src="https://img-src.io/i/username/photo.jpg" />
+```
+
+### Private Images (Pro)
+
+Pro users can create private images that require signed URLs:
+
+```bash
+# Create a signed URL (expires in 1 hour)
+curl -X POST https://api.img-src.io/api/v1/images/img_abc123/signed-url \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"expires_in": 3600}'
+```
+
+Response:
+
+```json
+{
+  "signed_url": "https://img-src.io/i/username/photo.jpg?sig=abc123&exp=1704070800"
+}
+```
+
+See [API Reference](/api-reference/images/signed-url) for details.
+
+## Error Responses
+
+### 401 Unauthorized
+
+```json
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "Invalid or missing API key",
+    "status": 401
+  }
+}
+```
+
+**Causes:**
+- Missing `Authorization` header
+- Invalid API key format
+- Expired API key
+- Deleted API key
+
+### 403 Forbidden
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Insufficient permissions",
+    "status": 403
+  }
+}
+```
+
+**Causes:**
+- Key doesn't have required scope
+- Attempting to access another user's resources
+
+## Rate Limiting
+
+API keys are rate limited based on your plan:
+
+| Plan | Requests/Minute |
+|------|-----------------|
+| Free | 100 |
+| Pro | 500 |
+
+Rate limit headers:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1704067260
+```
+
+When rate limited (429):
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests",
+    "status": 429
+  }
+}
+```

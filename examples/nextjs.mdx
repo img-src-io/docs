@@ -1,0 +1,374 @@
+---
+title: Next.js Integration
+description: "Using img-src with Next.js applications"
+---
+
+# Next.js Integration
+
+This guide covers integrating img-src with Next.js, including the built-in Image component and Server Components.
+
+## Using next/image
+
+Configure img-src as an external image provider in `next.config.js`:
+
+```js
+// next.config.js
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'img-src.io',
+        pathname: '/i/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cdn.img-src.io',
+        pathname: '/**',
+      },
+    ],
+  },
+};
+
+module.exports = nextConfig;
+```
+
+### Basic Usage
+
+```tsx
+import Image from 'next/image';
+
+export default function ProductImage() {
+  return (
+    <Image
+      src="https://img-src.io/i/username/product.jpg"
+      alt="Product"
+      width={400}
+      height={400}
+    />
+  );
+}
+```
+
+### With Transformations
+
+Add transformation parameters to the URL:
+
+```tsx
+import Image from 'next/image';
+
+export default function OptimizedImage() {
+  return (
+    <Image
+      src="https://img-src.io/i/username/hero.jpg?w=1200&h=630&fit=cover&q=85"
+      alt="Hero"
+      width={1200}
+      height={630}
+      priority
+    />
+  );
+}
+```
+
+## Custom Image Loader
+
+Create a custom loader for automatic transformations:
+
+```tsx
+// lib/img-src-loader.ts
+import { ImageLoaderProps } from 'next/image';
+
+export default function imgSrcLoader({ src, width, quality }: ImageLoaderProps) {
+  // If src is already a full img-src URL
+  if (src.startsWith('https://img-src.io') || src.startsWith('https://cdn.img-src.io')) {
+    const url = new URL(src);
+    url.searchParams.set('w', String(width));
+    if (quality) url.searchParams.set('q', String(quality));
+    return url.toString();
+  }
+
+  // If src is just a path, prepend the base URL
+  // Note: Output format is determined by file extension in the path
+  const params = new URLSearchParams({
+    w: String(width),
+    q: String(quality || 80),
+  });
+
+  return `https://img-src.io/i/${src}?${params}`;
+}
+```
+
+Use the loader:
+
+```tsx
+import Image from 'next/image';
+import imgSrcLoader from '@/lib/img-src-loader';
+
+export default function Product({ imagePath }: { imagePath: string }) {
+  return (
+    <Image
+      loader={imgSrcLoader}
+      src={imagePath}  // e.g., "username/products/shoe.jpg"
+      alt="Product"
+      width={400}
+      height={400}
+    />
+  );
+}
+```
+
+## Global Loader Configuration
+
+Set the loader globally in `next.config.js`:
+
+```js
+// next.config.js
+module.exports = {
+  images: {
+    loader: 'custom',
+    loaderFile: './lib/img-src-loader.ts',
+  },
+};
+```
+
+## API Route for Uploads
+
+Create an API route to proxy uploads:
+
+```ts
+// app/api/upload/route.ts
+import { ImgSrc } from '@img-src/sdk';
+import { NextRequest, NextResponse } from 'next/server';
+
+const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+
+export async function POST(request: NextRequest) {
+  const formData = await request.formData();
+  const file = formData.get('file') as File;
+  const path = formData.get('path') as string;
+
+  if (!file) {
+    return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+  }
+
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const image = await client.images.upload({
+      file: buffer,
+      path: path || `uploads/${file.name}`,
+      contentType: file.type,
+    });
+
+    return NextResponse.json(image);
+  } catch (error) {
+    console.error('Upload failed:', error);
+    return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
+  }
+}
+```
+
+## Server Components
+
+Fetch image metadata in Server Components:
+
+```tsx
+// app/images/[id]/page.tsx
+import Image from 'next/image';
+import { ImgSrc } from '@img-src/sdk';
+
+const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+
+export default async function ImagePage({ params }: { params: { id: string } }) {
+  const image = await client.images.get(params.id);
+
+  return (
+    <div>
+      <Image
+        src={`${image.url}?w=800`}
+        alt=""
+        width={800}
+        height={Math.round((800 / image.width) * image.height)}
+      />
+      <dl>
+        <dt>Dimensions</dt>
+        <dd>{image.width} x {image.height}</dd>
+        <dt>Size</dt>
+        <dd>{(image.size / 1024).toFixed(1)} KB</dd>
+        <dt>Type</dt>
+        <dd>{image.content_type}</dd>
+      </dl>
+    </div>
+  );
+}
+```
+
+## Image Gallery with ISR
+
+Build a gallery with Incremental Static Regeneration:
+
+```tsx
+// app/gallery/page.tsx
+import Image from 'next/image';
+import { ImgSrc } from '@img-src/sdk';
+
+const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+
+// Revalidate every hour
+export const revalidate = 3600;
+
+export default async function GalleryPage() {
+  const { images } = await client.images.list({ limit: 50 });
+
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      {images.map((image) => (
+        <div key={image.id} className="aspect-square relative">
+          <Image
+            src={`${image.url}?w=400&h=400&fit=cover`}
+            alt=""
+            fill
+            sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className="object-cover rounded-lg"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Upload Component (Client)
+
+Create a client-side upload component:
+
+```tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function UploadForm() {
+  const [uploading, setUploading] = useState(false);
+  const router = useRouter();
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setUploading(true);
+
+    const formData = new FormData(e.currentTarget);
+
+    try {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        router.refresh();
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input type="file" name="file" accept="image/*" required />
+      <input type="text" name="path" placeholder="Optional path" />
+      <button type="submit" disabled={uploading}>
+        {uploading ? 'Uploading...' : 'Upload'}
+      </button>
+    </form>
+  );
+}
+```
+
+## Middleware for Protected Images
+
+Use middleware to protect image routes:
+
+```ts
+// middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  // Check authentication for protected image paths
+  if (request.nextUrl.pathname.startsWith('/api/images')) {
+    const token = request.cookies.get('session');
+
+    if (!token) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: '/api/images/:path*',
+};
+```
+
+## Environment Variables
+
+Configure environment variables:
+
+```env
+# .env.local
+IMGSRC_API_KEY=imgsrc_your_api_key
+NEXT_PUBLIC_IMGSRC_USERNAME=your_username
+```
+
+Use them in components:
+
+```tsx
+// Server Component - can use process.env
+const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+
+// Client Component - use NEXT_PUBLIC_ prefix
+const username = process.env.NEXT_PUBLIC_IMGSRC_USERNAME;
+const imageUrl = `https://img-src.io/i/${username}/photo.jpg`;
+```
+
+## OG Image Generation
+
+Generate Open Graph images with img-src:
+
+```tsx
+// app/api/og/route.tsx
+import { ImageResponse } from 'next/og';
+
+export const runtime = 'edge';
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const title = searchParams.get('title') || 'My Site';
+  const image = searchParams.get('image');
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: '#000',
+        }}
+      >
+        {image && (
+          <img
+            src={`https://img-src.io/i/${image}?w=1200&h=630&fit=cover`}
+            style={{ position: 'absolute', width: '100%', height: '100%' }}
+          />
+        )}
+        <h1 style={{ color: '#fff', fontSize: 60 }}>{title}</h1>
+      </div>
+    ),
+    { width: 1200, height: 630 }
+  );
+}
+```

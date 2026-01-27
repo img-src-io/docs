@@ -1,0 +1,354 @@
+---
+title: Image Transformation
+description: "Learn how to transform images with URL parameters"
+---
+
+# Image Transformation
+
+img-src provides powerful on-demand image transformation through URL parameters. Images are transformed at the edge and cached for optimal performance.
+
+## Basic URL Structure
+
+```
+https://img-src.io/i/{username}/{path}?{parameters}
+```
+
+Or using the secondary CDN domain:
+
+```
+https://cdn.img-src.io/{username}/{path}?{parameters}
+```
+
+## Transformation Parameters
+
+### Quick Reference
+
+#### Size & Layout
+
+| Parameter | Description | Values | Example |
+|-----------|-------------|--------|---------|
+| `w` | Width in pixels | 1-10000 | `?w=800` |
+| `h` | Height in pixels | 1-10000 | `?h=600` |
+| `fit` | Fit mode | `cover`, `contain`, `fill`, `scale-down` | `?fit=cover` |
+| `aspect` | Aspect ratio | `original`, `1:1`, `4:3`, `16:9`, `3:2`, `21:9` | `?aspect=16:9` |
+
+#### Quality & Display
+
+| Parameter | Description | Values | Example |
+|-----------|-------------|--------|---------|
+| `q` | Quality (compression) | 1-100 (default: 80) | `?q=85` |
+| `dpr` | Device pixel ratio (Retina) | 1, 1.5, 2, 3 | `?dpr=2` |
+| `crop` | Crop position | `center`, `top`, `bottom`, `left`, `right`, `attention`, `entropy` | `?crop=attention` |
+| `grayscale` | Convert to grayscale | `true`, `false` | `?grayscale=true` |
+
+#### Effects & Transform
+
+| Parameter | Description | Values | Example |
+|-----------|-------------|--------|---------|
+| `blur` | Gaussian blur | 0-100 | `?blur=10` |
+| `sharpen` | Sharpen intensity | 0-100 | `?sharpen=15` |
+| `rotate` | Rotation angle | 0, 90, 180, 270, `auto` | `?rotate=90` |
+| `flip` | Flip/mirror | `h`, `v`, `both` | `?flip=h` |
+
+#### Presets (Pro)
+
+| Parameter | Description | Values | Example |
+|-----------|-------------|--------|---------|
+| `p:name` | Apply preset | Preset name | `?p:thumbnail` |
+
+### Width & Height
+
+Resize images by specifying width (`w`) and/or height (`h`) in pixels:
+
+```html
+<!-- Width only (height auto-calculated) -->
+<img src="https://img-src.io/i/john/photo.jpg?w=800" />
+
+<!-- Height only (width auto-calculated) -->
+<img src="https://img-src.io/i/john/photo.jpg?h=600" />
+
+<!-- Both dimensions -->
+<img src="https://img-src.io/i/john/photo.jpg?w=800&h=600" />
+```
+
+### Fit Mode
+
+Control how the image fits within the specified dimensions:
+
+| Mode | Description |
+|------|-------------|
+| `cover` | Fill dimensions, cropping if needed (default) |
+| `contain` | Fit within dimensions, preserving aspect ratio |
+| `fill` | Stretch to fill dimensions exactly |
+| `scale-down` | Like contain, but never upscale |
+
+```html
+<!-- Cover: fills 200x200, crops excess -->
+<img src="https://img-src.io/i/john/photo.jpg?w=200&h=200&fit=cover" />
+
+<!-- Contain: fits within 200x200, may have letterboxing -->
+<img src="https://img-src.io/i/john/photo.jpg?w=200&h=200&fit=contain" />
+
+<!-- Scale-down: never enlarges small images -->
+<img src="https://img-src.io/i/john/photo.jpg?w=2000&fit=scale-down" />
+```
+
+<Accordion title="Visual comparison of fit modes">
+  | Original (4:3) | cover | contain | fill |
+  |----------------|-------|---------|------|
+  | 400x300 | Cropped to 200x200 | 200x150 | Stretched to 200x200 |
+</Accordion>
+
+### Quality
+
+Adjust compression quality (1-100, default: 80):
+
+```html
+<!-- High quality for hero images -->
+<img src="https://img-src.io/i/john/hero.jpg?w=1920&q=90" />
+
+<!-- Lower quality for thumbnails -->
+<img src="https://img-src.io/i/john/thumb.jpg?w=100&q=60" />
+```
+
+<Tip>
+  Quality 80-85 provides a good balance between file size and visual quality for most use cases.
+</Tip>
+
+### Output Format
+
+The output format is determined by the file extension in the URL. You can serve the original format without conversion, or convert to a different format.
+
+| Format | Extension | Best For |
+|--------|-----------|----------|
+| **Original** | (same as uploaded) | No conversion, fastest delivery |
+| **WebP** | `.webp` | General use, best compression |
+| **AVIF** | `.avif` | Maximum compression |
+| **JPEG** | `.jpg`, `.jpeg` | Universal compatibility |
+| **PNG** | `.png` | Transparency, lossless |
+
+```html
+<!-- Serve original format (uploaded as photo.jpg) -->
+<img src="https://img-src.io/i/john/photo.jpg?w=800" />
+
+<!-- Convert to WebP -->
+<img src="https://img-src.io/i/john/photo.webp?w=800" />
+
+<!-- Convert to AVIF for maximum compression -->
+<img src="https://img-src.io/i/john/photo.avif?w=800" />
+```
+
+<Warning>
+  **AVIF Limitations:**
+  - Maximum resolution: 8 megapixels (~3500×2300)
+  - Maximum dimension: 4000px on either side
+  - Larger images are automatically scaled down before AVIF encoding
+</Warning>
+
+### Aspect Ratio
+
+Constrain the output to a specific aspect ratio:
+
+```html
+<!-- Square crop -->
+<img src="https://img-src.io/i/john/photo.jpg?w=400&aspect=1:1&fit=cover" />
+
+<!-- Widescreen -->
+<img src="https://img-src.io/i/john/photo.jpg?w=1200&aspect=16:9&fit=cover" />
+```
+
+Available values: `original`, `1:1`, `4:3`, `16:9`, `3:2`, `21:9`
+
+### DPR (Device Pixel Ratio)
+
+Serve higher resolution images for Retina displays:
+
+```html
+<!-- 2x for Retina displays (outputs 800px image for 400px display size) -->
+<img src="https://img-src.io/i/john/photo.jpg?w=400&dpr=2" />
+```
+
+Available values: `1`, `1.5`, `2`, `3`
+
+### Crop Position
+
+Control where the crop occurs when using `fit=cover`:
+
+```html
+<!-- Focus on faces/objects automatically -->
+<img src="https://img-src.io/i/john/portrait.jpg?w=200&h=200&fit=cover&crop=attention" />
+
+<!-- Crop from the top -->
+<img src="https://img-src.io/i/john/photo.jpg?w=800&h=400&fit=cover&crop=top" />
+```
+
+| Value | Description |
+|-------|-------------|
+| `center` | Center of the image (default) |
+| `top`, `bottom`, `left`, `right` | Edge positions |
+| `top-left`, `top-right`, `bottom-left`, `bottom-right` | Corner positions |
+| `attention` | Auto-detect important area (faces, objects) |
+| `entropy` | Area with highest visual complexity |
+
+### Grayscale
+
+Convert images to black and white:
+
+```html
+<img src="https://img-src.io/i/john/photo.jpg?w=800&grayscale=true" />
+```
+
+### Blur
+
+Apply Gaussian blur (0-100):
+
+```html
+<!-- Light blur for background -->
+<img src="https://img-src.io/i/john/bg.jpg?w=1920&blur=10" />
+
+<!-- Heavy blur for privacy -->
+<img src="https://img-src.io/i/john/photo.jpg?w=800&blur=50" />
+```
+
+### Sharpen
+
+Increase image sharpness (0-100):
+
+```html
+<!-- Subtle sharpening for product images -->
+<img src="https://img-src.io/i/john/product.jpg?w=800&sharpen=15" />
+```
+
+<Tip>
+  Use sharpen values between 10-30 for subtle enhancement. Higher values may introduce artifacts.
+</Tip>
+
+### Rotate
+
+Rotate the image:
+
+```html
+<!-- Rotate 90 degrees clockwise -->
+<img src="https://img-src.io/i/john/photo.jpg?rotate=90" />
+
+<!-- Auto-rotate based on EXIF data -->
+<img src="https://img-src.io/i/john/photo.jpg?rotate=auto" />
+```
+
+Available values: `0`, `90`, `180`, `270`, `auto`
+
+### Flip
+
+Mirror the image horizontally or vertically:
+
+```html
+<!-- Horizontal flip (mirror) -->
+<img src="https://img-src.io/i/john/photo.jpg?flip=h" />
+
+<!-- Vertical flip -->
+<img src="https://img-src.io/i/john/photo.jpg?flip=v" />
+
+<!-- Both -->
+<img src="https://img-src.io/i/john/photo.jpg?flip=both" />
+```
+
+## Combining Parameters
+
+Chain multiple parameters with `&`:
+
+```html
+<img src="https://img-src.io/i/john/photo.jpg?w=800&h=600&fit=cover&q=85" />
+```
+
+To convert format, change the file extension:
+
+```html
+<img src="https://img-src.io/i/john/photo.webp?w=800&h=600&fit=cover&q=85" />
+```
+
+## Using Presets (Pro)
+
+Pro users can save transformation configurations as presets:
+
+```html
+<!-- Apply a preset -->
+<img src="https://img-src.io/i/john/photo.jpg?p:thumbnail" />
+
+<!-- Preset with override -->
+<img src="https://img-src.io/i/john/photo.jpg?p:thumbnail&q=90" />
+```
+
+See [Presets Guide](/guides/presets) for setup instructions.
+
+## Responsive Images
+
+Use `srcset` for responsive images:
+
+```html
+<img
+  src="https://img-src.io/i/john/photo.jpg?w=400"
+  srcset="
+    https://img-src.io/i/john/photo.jpg?w=400 400w,
+    https://img-src.io/i/john/photo.jpg?w=800 800w,
+    https://img-src.io/i/john/photo.jpg?w=1200 1200w
+  "
+  sizes="(max-width: 600px) 400px, (max-width: 1200px) 800px, 1200px"
+  alt="Responsive image"
+/>
+```
+
+## Supported Input Formats
+
+img-src accepts these input formats:
+
+- **Common**: JPEG, PNG, WebP, GIF
+- **Professional**: TIFF, BMP, ICO, SVG
+- **Modern**: HEIC/HEIF, AVIF
+- **Specialized**: TGA, PNM, QOI, HDR, EXR
+
+## Caching
+
+Transformed images are cached at the edge:
+
+- **First request**: Image is fetched, transformed, and cached
+- **Subsequent requests**: Served directly from cache
+- **Cache duration**: 30 days (configurable)
+
+Cache is automatically invalidated when:
+- The original image is updated
+- The image is deleted
+- You call the purge API endpoint
+
+### Cache Headers
+
+Responses include standard cache headers:
+
+```
+Cache-Control: public, max-age=2592000
+ETag: "abc123..."
+```
+
+Use `If-None-Match` header with the ETag for conditional requests.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use appropriate quality settings">
+    - Hero/banner images: 85-90
+    - Product images: 80-85
+    - Thumbnails: 60-75
+    - Backgrounds: 70-80
+  </Accordion>
+
+  <Accordion title="Let the browser choose format">
+    Use the file extension in your URL to specify the output format (e.g., `.webp`, `.avif`). img-src will convert your image to that format automatically.
+  </Accordion>
+
+  <Accordion title="Use fit=scale-down for unknown sizes">
+    Prevents small images from being upscaled and looking blurry.
+  </Accordion>
+
+  <Accordion title="Create presets for common sizes">
+    Pro users should create presets for frequently used transformations to simplify URLs and ensure consistency.
+  </Accordion>
+</AccordionGroup>

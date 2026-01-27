@@ -1,0 +1,260 @@
+---
+title: Quick Start
+description: "Get started with img-src in 5 minutes"
+---
+
+# Quick Start
+
+This guide will help you upload your first image and serve it with transformations.
+
+## Prerequisites
+
+- An img-src account ([Sign up free](https://img-src.io/sign-up))
+- An API key from your [Settings page](https://img-src.io/settings)
+
+## Step 1: Get Your API Key
+
+1. Go to [img-src.io/settings](https://img-src.io/settings)
+2. Click **Create API Key**
+3. Give it a name and copy the key (it won't be shown again)
+
+<Warning>
+  Keep your API key secure. Don't commit it to version control or expose it in client-side code.
+</Warning>
+
+## Step 2: Upload an Image
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.img-src.io/api/v1/images \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -F "file=@photo.jpg" \
+  -F "path=photos/vacation.jpg"
+```
+
+```typescript TypeScript
+import { ImgSrc } from '@img-src/sdk';
+
+const client = new ImgSrc({ apiKey: 'imgsrc_YOUR_API_KEY' });
+
+const response = await client.images.upload({
+  file: fs.createReadStream('photo.jpg'),
+  path: 'photos/vacation.jpg'
+});
+
+console.log(response.url);
+// https://img-src.io/i/username/photos/vacation.jpg
+```
+
+```python Python
+from img_src import ImgSrc
+
+client = ImgSrc(api_key="imgsrc_YOUR_API_KEY")
+
+with open("photo.jpg", "rb") as f:
+    response = client.images.upload(
+        file=f,
+        path="photos/vacation.jpg"
+    )
+
+print(response.url)
+# https://img-src.io/i/username/photos/vacation.jpg
+```
+
+```go Go
+import (
+    "context"
+    "fmt"
+    "os"
+
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+client := imgsrc.NewClient("imgsrc_YOUR_API_KEY")
+
+file, err := os.Open("photo.jpg")
+if err != nil {
+    log.Fatal(err)
+}
+defer file.Close()
+
+image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
+    File: file,
+    Path: "photos/vacation.jpg",
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+fmt.Println(image.URL)
+// https://img-src.io/i/username/photos/vacation.jpg
+```
+
+```rust Rust
+use imgsrc::Client;
+
+let client = Client::new("imgsrc_YOUR_API_KEY");
+
+let image = client
+    .images()
+    .upload(Path::new("photo.jpg"))
+    .path("photos/vacation.jpg")
+    .send()
+    .await?;
+
+println!("{}", image.url);
+// https://img-src.io/i/username/photos/vacation.jpg
+```
+
+</CodeGroup>
+
+The response includes your CDN URL:
+
+```json
+{
+  "id": "img_abc123",
+  "url": "https://img-src.io/i/username/photos/vacation.jpg",
+  "paths": ["photos/vacation.jpg"],
+  "content_type": "image/jpeg",
+  "size": 1234567,
+  "width": 4000,
+  "height": 3000,
+  "created_at": 1704067200
+}
+```
+
+## Step 3: Serve with Transformations
+
+Now you can request the image with transformation parameters:
+
+<CodeGroup>
+
+```html Original
+<img src="https://img-src.io/i/username/photos/vacation.jpg" />
+```
+
+```html Resized (800px width)
+<img src="https://img-src.io/i/username/photos/vacation.jpg?w=800" />
+```
+
+```html Thumbnail (200x200, cover)
+<img src="https://img-src.io/i/username/photos/vacation.jpg?w=200&h=200&fit=cover" />
+```
+
+```html WebP with quality
+<img src="https://img-src.io/i/username/photos/vacation.webp?w=800&q=85" />
+```
+
+</CodeGroup>
+
+## Transformation Parameters
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `w` | Width in pixels | `w=800` |
+| `h` | Height in pixels | `h=600` |
+| `fit` | Fit mode | `fit=cover` |
+| `q` | Quality (1-100) | `q=85` |
+
+<Tip>
+  Output format is determined by the file extension in the URL. Change `.jpg` to `.webp` or `.avif` to convert formats.
+</Tip>
+
+### Fit Modes
+
+- **cover** - Fill the dimensions, cropping if needed
+- **contain** - Fit within dimensions, preserving aspect ratio
+- **fill** - Stretch to fill dimensions exactly
+- **scale-down** - Like contain, but never upscale
+
+## Step 4: List Your Images
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.img-src.io/api/v1/images \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+```typescript TypeScript
+const images = await client.images.list({ limit: 10 });
+console.log(images.items);
+```
+
+```python Python
+images = client.images.list(limit=10)
+print(images.items)
+```
+
+```go Go
+result, err := client.Images.List(ctx, &imgsrc.ListParams{Limit: 10})
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(result.Images)
+```
+
+```rust Rust
+let result = client.images().list().limit(10).send().await?;
+println!("{:?}", result.images);
+```
+
+</CodeGroup>
+
+## Step 5: Delete an Image
+
+<CodeGroup>
+
+```bash cURL
+curl -X DELETE https://api.img-src.io/api/v1/images/img_abc123 \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+```typescript TypeScript
+await client.images.delete('img_abc123');
+```
+
+```python Python
+client.images.delete("img_abc123")
+```
+
+```go Go
+err := client.Images.Delete(ctx, "img_abc123")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+```rust Rust
+client.images().delete("img_abc123").await?;
+```
+
+</CodeGroup>
+
+## Using the Dashboard
+
+You can also manage images through the web dashboard:
+
+1. Go to [img-src.io](https://img-src.io)
+2. Sign in with your account
+3. Drag and drop images to upload
+4. Click on an image to copy its URL
+5. Use the URL builder to add transformations
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Image Transformation" icon="image" href="/guides/image-transformation">
+    Learn all transformation options
+  </Card>
+  <Card title="Authentication" icon="key" href="/guides/authentication">
+    Secure your API access
+  </Card>
+  <Card title="TypeScript SDK" icon="js" href="/sdk/typescript">
+    Use the official TypeScript SDK
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/overview">
+    Explore all API endpoints
+  </Card>
+</CardGroup>

@@ -1,0 +1,63 @@
+---
+title: Create Preset
+api: POST /api/v1/settings/presets
+description: Create a new transformation preset (Pro only)
+---
+
+<Note>
+  This endpoint requires a Pro plan subscription.
+</Note>
+
+<RequestExample>
+```bash cURL
+curl -X POST https://api.img-src.io/api/v1/settings/presets \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "thumbnail",
+    "description": "200x200 thumbnail with cover fit",
+    "params": {
+      "w": 200,
+      "h": 200,
+      "fit": "cover",
+      "format": "webp"
+    }
+  }'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "id": "preset_abc123",
+  "name": "thumbnail",
+  "description": "200x200 thumbnail with cover fit",
+  "params": {
+    "w": 200,
+    "h": 200,
+    "fit": "cover",
+    "format": "webp"
+  },
+  "created_at": 1704067200,
+  "updated_at": 1704067200
+}
+```
+</ResponseExample>
+
+## Parameters
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | Yes | Preset name (alphanumeric, hyphens, underscores) |
+| `description` | string | No | Human-readable description |
+| `params` | object | Yes | Transformation parameters |
+
+## Available Params
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `w` | integer | Width in pixels |
+| `h` | integer | Height in pixels |
+| `fit` | string | Fit mode: cover, contain, fill, scale-down |
+| `q` | integer | Quality (1-100) |
+| `format` | string | Output format: webp, avif, jpeg, png |

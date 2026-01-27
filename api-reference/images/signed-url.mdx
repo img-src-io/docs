@@ -1,0 +1,55 @@
+---
+title: Create Signed URL
+api: POST /api/v1/images/{id}/signed-url
+description: Create a signed URL for private image access (Pro only)
+---
+
+<Note>
+  This endpoint requires a Pro plan subscription.
+</Note>
+
+Signed URLs allow temporary access to images without exposing your API key. They're useful for:
+- Sharing private images with expiring links
+- Embedding images in emails
+- Time-limited access to premium content
+
+<RequestExample>
+```bash cURL
+curl -X POST https://api.img-src.io/api/v1/images/img_abc123/signed-url \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"expires_in": 3600}'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 OK
+{
+  "signed_url": "https://img-src.io/i/username/photo.jpg?sig=abc123&exp=1704070800",
+  "expires_at": 1704070800
+}
+```
+</ResponseExample>
+
+## Parameters
+
+| Name | Type | Description |
+|------|------|-------------|
+| `expires_in` | integer | Expiration time in seconds (max 86400 = 24 hours) |
+| `transform` | object | Optional transformation parameters to include |
+
+## Example with Transformations
+
+```bash
+curl -X POST https://api.img-src.io/api/v1/images/img_abc123/signed-url \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "expires_in": 3600,
+    "transform": {
+      "w": 800,
+      "h": 600,
+      "fit": "cover"
+    }
+  }'
+```

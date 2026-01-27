@@ -1,0 +1,265 @@
+---
+title: Introduction
+description: "Serverless image processing and delivery API with global edge network"
+---
+
+# Welcome to img-src
+
+**img-src** is a serverless image processing and delivery API that transforms and delivers your images at the edge. Built on a global edge network, it provides fast, reliable image optimization with minimal latency worldwide.
+
+## Why img-src?
+
+<CardGroup cols={2}>
+  <Card title="Edge Processing" icon="globe">
+    Images are processed at 300+ edge locations closest to your users, minimizing latency to under 50ms globally.
+  </Card>
+  <Card title="On-Demand Transformation" icon="wand-magic-sparkles">
+    Resize, crop, and convert images via URL parameters. No pre-processing or build steps required.
+  </Card>
+  <Card title="Modern Formats" icon="image">
+    Automatic WebP and AVIF delivery based on browser support, reducing bandwidth by up to 50%.
+  </Card>
+  <Card title="Simple Integration" icon="code">
+    Drop-in replacement for your image URLs. Works with React, Next.js, Vue, or any static site.
+  </Card>
+</CardGroup>
+
+## How It Works
+
+<img src="https://img-src.io/i/taehun/how_it_works.png?w=1000" alt="How img-src works" />
+
+1. **Upload** your images via API or dashboard
+2. **Request** images with transformation parameters
+3. **Deliver** optimized images from the edge cache
+
+### Architecture
+
+img-src uses a multi-layer architecture for optimal performance:
+
+- **CDN Layer**: Global edge network caches transformed images
+- **Edge Computing**: Serverless workers handle transformation logic at the edge
+- **Storage Layer**: S3-compatible object storage for originals
+- **Processing Layer**: Native image codecs for high-quality transformations
+
+## Quick Example
+
+Upload an image and serve it with transformations:
+
+```bash
+# Upload an image
+curl -X POST https://api.img-src.io/api/v1/images \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -F "file=@photo.jpg"
+
+# Response includes your CDN URL
+{
+  "url": "https://img-src.io/i/username/photo.jpg"
+}
+```
+
+Then request with transformations:
+
+```html
+<!-- Original -->
+<img src="https://img-src.io/i/username/photo.jpg" />
+
+<!-- Resized to 800px width -->
+<img src="https://img-src.io/i/username/photo.jpg?w=800" />
+
+<!-- Resized and converted to WebP -->
+<img src="https://img-src.io/i/username/photo.webp?w=800" />
+
+<!-- Thumbnail with cover fit -->
+<img src="https://img-src.io/i/username/photo.jpg?w=200&h=200&fit=cover" />
+
+<!-- Using a preset (Pro) -->
+<img src="https://img-src.io/i/username/photo.jpg?p:thumbnail" />
+```
+
+## URL Structure
+
+img-src provides two CDN domains:
+
+| Domain | Format | Example |
+|--------|--------|---------|
+| Primary | `img-src.io/i/{username}/{path}` | `https://img-src.io/i/john/photos/hero.jpg` |
+| Secondary | `cdn.img-src.io/{username}/{path}` | `https://cdn.img-src.io/john/photos/hero.jpg` |
+
+Both domains support identical transformation parameters.
+
+## Features
+
+### Image Transformation
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `w` | Width in pixels | `?w=800` |
+| `h` | Height in pixels | `?h=600` |
+| `fit` | Fit mode (`cover`, `contain`, `fill`, `scale-down`) | `?fit=cover` |
+| `q` | Quality (1-100) | `?q=85` |
+| `p:name` | Apply preset (Pro) | `?p:thumbnail` |
+
+See the [Image Transformation Guide](/guides/image-transformation) for complete documentation.
+
+### Supported Input Formats
+
+<CardGroup cols={3}>
+  <Card title="Common" icon="image">
+    JPEG, PNG, WebP, GIF
+  </Card>
+  <Card title="Professional" icon="camera">
+    TIFF, BMP, ICO, SVG
+  </Card>
+  <Card title="Modern" icon="sparkles">
+    HEIC/HEIF, AVIF, HDR, EXR
+  </Card>
+</CardGroup>
+
+Also supported: TGA, PNM, QOI
+
+### Output Formats
+
+Output format is determined by the file extension in the CDN URL. You can also serve the original format without conversion.
+
+| Format | Extension | Best For |
+|--------|-----------|----------|
+| **Original** | (same as uploaded) | No conversion, fastest delivery |
+| **WebP** | `.webp` | General use, best compression |
+| **AVIF** | `.avif` | Maximum compression (max 8MP) |
+| **JPEG** | `.jpg`, `.jpeg` | Universal compatibility |
+| **PNG** | `.png` | Transparency, lossless |
+
+```html
+<!-- Serve original format (no conversion) -->
+<img src="https://img-src.io/i/username/photo.jpg?w=800" />
+
+<!-- Convert to WebP -->
+<img src="https://img-src.io/i/username/photo.webp?w=800" />
+
+<!-- Convert to AVIF -->
+<img src="https://img-src.io/i/username/photo.avif?w=800" />
+```
+
+### Pro Features
+
+<CardGroup cols={2}>
+  <Card title="Presets" icon="bookmark" href="/guides/presets">
+    Save transformation configurations and apply with `?p:name`
+  </Card>
+  <Card title="Signed URLs" icon="lock" href="/api-reference/images/signed-url">
+    Time-limited URLs for private image access
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="E-commerce Product Images">
+    Serve product images in multiple sizes for thumbnails, galleries, and zoom views without storing multiple versions.
+
+    ```html
+    <img src="...?w=100&h=100&fit=cover" />  <!-- Thumbnail -->
+    <img src="...?w=400&h=400&fit=contain" /> <!-- Gallery -->
+    <img src="...?w=1200&q=90" />             <!-- Zoom -->
+    ```
+  </Accordion>
+
+  <Accordion title="Responsive Web Images">
+    Generate srcset variations on-the-fly for optimal loading across devices.
+
+    ```html
+    <img
+      src="...?w=400"
+      srcset="...?w=400 400w, ...?w=800 800w, ...?w=1200 1200w"
+      sizes="(max-width: 600px) 100vw, 800px"
+    />
+    ```
+  </Accordion>
+
+  <Accordion title="User-Generated Content">
+    Process uploaded images automatically with consistent sizing and format optimization.
+  </Accordion>
+
+  <Accordion title="Social Media / OG Images">
+    Generate Open Graph images with exact dimensions for social sharing.
+
+    ```html
+    <meta property="og:image" content="...?w=1200&h=630&fit=cover" />
+    ```
+  </Accordion>
+
+  <Accordion title="Avatar & Profile Images">
+    Consistent circular or square avatars across your application.
+
+    ```html
+    <img src="...?w=100&h=100&fit=cover" class="rounded-full" />
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## SDKs & Integrations
+
+Official SDKs are available for popular languages:
+
+<CardGroup cols={4}>
+  <Card title="TypeScript" icon="js" href="/sdk/typescript">
+    npm install @img-src/sdk
+  </Card>
+  <Card title="Python" icon="python" href="/sdk/python">
+    pip install img-src
+  </Card>
+  <Card title="Go" icon="golang" href="/sdk/go">
+    go get github.com/img-src-io/sdk-go
+  </Card>
+  <Card title="Rust" icon="rust" href="/sdk/rust">
+    cargo add imgsrc
+  </Card>
+</CardGroup>
+
+Framework-specific examples:
+
+<CardGroup cols={3}>
+  <Card title="React" href="/examples/react">
+    Components & Hooks
+  </Card>
+  <Card title="Next.js" href="/examples/nextjs">
+    Image loader & API routes
+  </Card>
+  <Card title="HTML" href="/examples/html">
+    Vanilla JS & CDN usage
+  </Card>
+</CardGroup>
+
+## Rate Limits
+
+API requests are rate limited based on your plan:
+
+| Limit Type | Free | Pro |
+|------------|------|-----|
+| API Requests | 100/min | 500/min |
+| Transformations | 1,000/month | 50,000/month |
+
+Rate limit headers are included in every response:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1704067260
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="play" href="/quickstart">
+    Get up and running in 5 minutes
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/overview">
+    Explore the full API documentation
+  </Card>
+  <Card title="Image Transformation" icon="image" href="/guides/image-transformation">
+    Learn about transformation parameters
+  </Card>
+  <Card title="Authentication" icon="key" href="/guides/authentication">
+    API key management and security
+  </Card>
+</CardGroup>

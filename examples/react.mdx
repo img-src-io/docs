@@ -1,0 +1,394 @@
+---
+title: React Integration
+description: "Using img-src with React applications"
+---
+
+# React Integration
+
+This guide shows how to integrate img-src into your React application.
+
+## Basic Usage
+
+The simplest way to use img-src is with standard `<img>` tags:
+
+```tsx
+function ProductImage({ username, path }: { username: string; path: string }) {
+  return (
+    <img
+      src={`https://img-src.io/i/${username}/${path}?w=400`}
+      alt="Product"
+      loading="lazy"
+    />
+  );
+}
+```
+
+## Custom Image Component
+
+Create a reusable component with transformation support:
+
+```tsx
+interface ImgSrcImageProps {
+  username: string;
+  path: string;
+  width?: number;
+  height?: number;
+  fit?: 'cover' | 'contain' | 'fill' | 'scale-down';
+  quality?: number;
+  preset?: string;
+  alt: string;
+  className?: string;
+}
+
+function ImgSrcImage({
+  username,
+  path,
+  width,
+  height,
+  fit,
+  quality,
+  preset,
+  alt,
+  className,
+}: ImgSrcImageProps) {
+  // Build the image URL
+  // Note: Output format is determined by the file extension in `path`
+  let src: string;
+
+  if (preset) {
+    // Presets use p:name syntax in the URL
+    src = `https://img-src.io/i/${username}/${path}?p:${preset}`;
+  } else {
+    const params = new URLSearchParams();
+    if (width) params.set('w', String(width));
+    if (height) params.set('h', String(height));
+    if (fit) params.set('fit', fit);
+    if (quality) params.set('q', String(quality));
+    const queryString = params.toString();
+    src = `https://img-src.io/i/${username}/${path}${queryString ? `?${queryString}` : ''}`;
+  }
+
+  return <img src={src} alt={alt} className={className} loading="lazy" />;
+}
+
+// Usage
+<ImgSrcImage
+  username="john"
+  path="products/shoe.jpg"
+  width={400}
+  height={400}
+  fit="cover"
+  quality={85}
+  alt="Running shoe"
+/>
+```
+
+## Responsive Images with srcset
+
+For responsive images, generate multiple sizes:
+
+```tsx
+interface ResponsiveImageProps {
+  username: string;
+  path: string;
+  sizes: string;
+  widths: number[];
+  alt: string;
+  className?: string;
+}
+
+function ResponsiveImage({
+  username,
+  path,
+  sizes,
+  widths,
+  alt,
+  className,
+}: ResponsiveImageProps) {
+  // Output format is determined by the file extension in path
+  const baseUrl = `https://img-src.io/i/${username}/${path}`;
+
+  const srcSet = widths
+    .map((w) => `${baseUrl}?w=${w} ${w}w`)
+    .join(', ');
+
+  const defaultSrc = `${baseUrl}?w=${widths[0]}`;
+
+  return (
+    <img
+      src={defaultSrc}
+      srcSet={srcSet}
+      sizes={sizes}
+      alt={alt}
+      className={className}
+      loading="lazy"
+    />
+  );
+}
+
+// Usage - use .webp extension for WebP output
+<ResponsiveImage
+  username="john"
+  path="hero.webp"
+  widths={[400, 800, 1200, 1600]}
+  sizes="(max-width: 600px) 400px, (max-width: 1200px) 800px, 1200px"
+  alt="Hero image"
+/>
+```
+
+## React Hook for URL Building
+
+Create a hook for building transformation URLs:
+
+```tsx
+import { useMemo } from 'react';
+
+interface UseImgSrcOptions {
+  width?: number;
+  height?: number;
+  fit?: 'cover' | 'contain' | 'fill' | 'scale-down';
+  quality?: number;
+  preset?: string;
+}
+
+function useImgSrc(
+  username: string,
+  path: string,  // Output format is determined by file extension
+  options: UseImgSrcOptions = {}
+) {
+  return useMemo(() => {
+    // Presets use p:name syntax in the URL
+    if (options.preset) {
+      return `https://img-src.io/i/${username}/${path}?p:${options.preset}`;
+    }
+
+    const params = new URLSearchParams();
+    if (options.width) params.set('w', String(options.width));
+    if (options.height) params.set('h', String(options.height));
+    if (options.fit) params.set('fit', options.fit);
+    if (options.quality) params.set('q', String(options.quality));
+
+    const queryString = params.toString();
+    return `https://img-src.io/i/${username}/${path}${queryString ? `?${queryString}` : ''}`;
+  }, [username, path, options]);
+}
+
+// Usage
+function ProductCard({ product }) {
+  const imageUrl = useImgSrc(product.username, product.imagePath, {
+    width: 300,
+    height: 300,
+    fit: 'cover',
+  });
+
+  return (
+    <div>
+      <img src={imageUrl} alt={product.name} />
+      <h3>{product.name}</h3>
+    </div>
+  );
+}
+```
+
+## Upload Component
+
+Create an upload component with progress tracking:
+
+```tsx
+import { useState, useCallback } from 'react';
+
+interface UploadResult {
+  id: string;
+  url: string;
+}
+
+function ImageUpload({ onUpload }: { onUpload: (result: UploadResult) => void }) {
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const handleUpload = useCallback(async (file: File) => {
+    setUploading(true);
+    setProgress(0);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('path', `uploads/${file.name}`);
+
+    try {
+      // Upload through your backend proxy
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Upload failed');
+      }
+
+      const result = await response.json();
+      onUpload(result);
+    } catch (error) {
+      console.error('Upload error:', error);
+      // Handle error (show toast, etc.)
+    } finally {
+      setUploading(false);
+    }
+  }, [onUpload]);
+
+  return (
+    <div>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
+        disabled={uploading}
+      />
+      {uploading && <progress value={progress} max={100} />}
+    </div>
+  );
+}
+```
+
+## Gallery Component
+
+Display a grid of images with lazy loading:
+
+```tsx
+interface Image {
+  id: string;
+  path: string;
+  username: string;
+}
+
+function ImageGallery({ images }: { images: Image[] }) {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      {images.map((image) => (
+        <div key={image.id} className="aspect-square">
+          <img
+            src={`https://img-src.io/i/${image.username}/${image.path}?w=300&h=300&fit=cover`}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-cover rounded-lg"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Error Handling
+
+Handle image loading errors gracefully:
+
+```tsx
+import { useState } from 'react';
+
+interface ImageWithFallbackProps {
+  src: string;
+  fallback: string;
+  alt: string;
+  className?: string;
+}
+
+function ImageWithFallback({
+  src,
+  fallback,
+  alt,
+  className,
+}: ImageWithFallbackProps) {
+  const [error, setError] = useState(false);
+
+  return (
+    <img
+      src={error ? fallback : src}
+      alt={alt}
+      className={className}
+      onError={() => setError(true)}
+      loading="lazy"
+    />
+  );
+}
+
+// Usage
+<ImageWithFallback
+  src="https://img-src.io/i/john/photo.jpg?w=400"
+  fallback="/placeholder.png"
+  alt="User photo"
+/>
+```
+
+## With React Query
+
+Fetch and cache image metadata:
+
+```tsx
+import { useQuery } from '@tanstack/react-query';
+
+function useImageMetadata(imageId: string) {
+  return useQuery({
+    queryKey: ['image', imageId],
+    queryFn: async () => {
+      const response = await fetch(`/api/images/${imageId}`);
+      return response.json();
+    },
+  });
+}
+
+function ImageDetails({ imageId }: { imageId: string }) {
+  const { data: image, isLoading } = useImageMetadata(imageId);
+
+  if (isLoading) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <img src={`${image.url}?w=800`} alt="" />
+      <p>Size: {image.width}x{image.height}</p>
+      <p>Type: {image.content_type}</p>
+    </div>
+  );
+}
+```
+
+## TypeScript Types
+
+Define types for your img-src integration:
+
+```typescript
+export interface ImgSrcTransform {
+  w?: number;
+  h?: number;
+  fit?: 'cover' | 'contain' | 'fill' | 'scale-down';
+  q?: number;
+}
+
+export interface ImgSrcImage {
+  id: string;
+  url: string;
+  paths: string[];
+  content_type: string;
+  size: number;
+  width: number;
+  height: number;
+  created_at: number;
+}
+
+// Note: Output format is determined by file extension in `path`
+// e.g., photo.webp for WebP, photo.jpg for JPEG
+export function buildImgSrcUrl(
+  username: string,
+  path: string,
+  transform?: ImgSrcTransform
+): string {
+  const params = new URLSearchParams();
+  if (transform?.w) params.set('w', String(transform.w));
+  if (transform?.h) params.set('h', String(transform.h));
+  if (transform?.fit) params.set('fit', transform.fit);
+  if (transform?.q) params.set('q', String(transform.q));
+
+  const query = params.toString();
+  return `https://img-src.io/i/${username}/${path}${query ? `?${query}` : ''}`;
+}
+```

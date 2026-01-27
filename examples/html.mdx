@@ -1,0 +1,306 @@
+---
+title: HTML / CDN Usage
+description: "Using img-src directly in HTML without a framework"
+---
+
+# HTML / CDN Usage
+
+img-src can be used directly in HTML without any framework or build tools. This guide covers basic usage, responsive images, and lazy loading.
+
+## Basic Usage
+
+Simply use the CDN URL in your `<img>` tags:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>My Page</title>
+</head>
+<body>
+  <!-- Original image -->
+  <img src="https://img-src.io/i/username/photo.jpg" alt="My photo">
+
+  <!-- Resized to 800px width -->
+  <img src="https://img-src.io/i/username/photo.jpg?w=800" alt="My photo">
+
+  <!-- Thumbnail with cover fit -->
+  <img src="https://img-src.io/i/username/photo.jpg?w=200&h=200&fit=cover" alt="My photo">
+</body>
+</html>
+```
+
+## Transformation Parameters
+
+Add parameters to the URL query string:
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `w` | Width in pixels | `?w=800` |
+| `h` | Height in pixels | `?h=600` |
+| `fit` | Fit mode | `?fit=cover` |
+| `q` | Quality (1-100) | `?q=85` |
+
+<Tip>
+  Output format is determined by the file extension. Change `.jpg` to `.webp` or `.avif` to convert.
+</Tip>
+
+### Combined Example
+
+```html
+<img
+  src="https://img-src.io/i/username/hero.webp?w=1200&h=630&fit=cover&q=85"
+  alt="Hero image"
+>
+```
+
+## Responsive Images
+
+Use `srcset` and `sizes` for responsive images:
+
+```html
+<img
+  src="https://img-src.io/i/username/photo.jpg?w=400"
+  srcset="
+    https://img-src.io/i/username/photo.jpg?w=400 400w,
+    https://img-src.io/i/username/photo.jpg?w=800 800w,
+    https://img-src.io/i/username/photo.jpg?w=1200 1200w,
+    https://img-src.io/i/username/photo.jpg?w=1600 1600w
+  "
+  sizes="(max-width: 600px) 100vw, (max-width: 1200px) 50vw, 800px"
+  alt="Responsive photo"
+>
+```
+
+### With Art Direction
+
+Use `<picture>` for different crops at different sizes:
+
+```html
+<picture>
+  <!-- Mobile: square crop -->
+  <source
+    media="(max-width: 600px)"
+    srcset="https://img-src.io/i/username/photo.jpg?w=400&h=400&fit=cover"
+  >
+  <!-- Tablet: 16:9 crop -->
+  <source
+    media="(max-width: 1024px)"
+    srcset="https://img-src.io/i/username/photo.jpg?w=800&h=450&fit=cover"
+  >
+  <!-- Desktop: full width -->
+  <img
+    src="https://img-src.io/i/username/photo.jpg?w=1200&h=600&fit=cover"
+    alt="Responsive photo"
+  >
+</picture>
+```
+
+## Lazy Loading
+
+Use native lazy loading for images below the fold:
+
+```html
+<!-- Above the fold - load immediately -->
+<img
+  src="https://img-src.io/i/username/hero.jpg?w=1200"
+  alt="Hero"
+>
+
+<!-- Below the fold - lazy load -->
+<img
+  src="https://img-src.io/i/username/photo1.jpg?w=400"
+  alt="Photo 1"
+  loading="lazy"
+>
+<img
+  src="https://img-src.io/i/username/photo2.jpg?w=400"
+  alt="Photo 2"
+  loading="lazy"
+>
+```
+
+## Background Images
+
+Use img-src URLs in CSS background images:
+
+```html
+<style>
+  .hero {
+    background-image: url('https://img-src.io/i/username/hero.jpg?w=1920&h=1080&fit=cover&q=85');
+    background-size: cover;
+    background-position: center;
+    height: 100vh;
+  }
+
+  /* Responsive background */
+  @media (max-width: 768px) {
+    .hero {
+      background-image: url('https://img-src.io/i/username/hero.jpg?w=768&h=1024&fit=cover');
+    }
+  }
+</style>
+
+<div class="hero">
+  <h1>Welcome</h1>
+</div>
+```
+
+## Image Gallery
+
+A simple image gallery without JavaScript:
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1rem;
+      padding: 1rem;
+    }
+
+    .gallery img {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="gallery">
+    <img src="https://img-src.io/i/username/photo1.jpg?w=400&h=400&fit=cover" alt="" loading="lazy">
+    <img src="https://img-src.io/i/username/photo2.jpg?w=400&h=400&fit=cover" alt="" loading="lazy">
+    <img src="https://img-src.io/i/username/photo3.jpg?w=400&h=400&fit=cover" alt="" loading="lazy">
+    <img src="https://img-src.io/i/username/photo4.jpg?w=400&h=400&fit=cover" alt="" loading="lazy">
+  </div>
+</body>
+</html>
+```
+
+## Presets (Pro)
+
+If you have Pro plan, use presets for cleaner URLs:
+
+```html
+<!-- Without preset -->
+<img src="https://img-src.io/i/username/photo.jpg?w=200&h=200&fit=cover&q=80">
+
+<!-- With preset -->
+<img src="https://img-src.io/i/username/photo.jpg?p:thumbnail">
+```
+
+## JavaScript Helper
+
+Add a helper function for building URLs:
+
+```html
+<script>
+function imgSrcUrl(username, path, options = {}) {
+  // Presets use p:name syntax in the URL
+  if (options.preset) {
+    return `https://img-src.io/i/${username}/${path}?p:${options.preset}`;
+  }
+
+  const params = new URLSearchParams();
+  if (options.width) params.set('w', options.width);
+  if (options.height) params.set('h', options.height);
+  if (options.fit) params.set('fit', options.fit);
+  if (options.quality) params.set('q', options.quality);
+  // Output format is determined by file extension, not a query parameter
+
+  const query = params.toString();
+  return `https://img-src.io/i/${username}/${path}${query ? '?' + query : ''}`;
+}
+
+// Usage
+const url = imgSrcUrl('john', 'photos/vacation.jpg', {
+  width: 800,
+  height: 600,
+  fit: 'cover',
+  quality: 85
+});
+
+document.getElementById('myImage').src = url;
+</script>
+```
+
+## Upload with Fetch
+
+Upload images using the Fetch API:
+
+```html
+<input type="file" id="fileInput" accept="image/*">
+<button onclick="upload()">Upload</button>
+<img id="preview" style="display: none;">
+
+<script>
+async function upload() {
+  const fileInput = document.getElementById('fileInput');
+  const file = fileInput.files[0];
+
+  if (!file) {
+    alert('Please select a file');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('path', 'uploads/' + file.name);
+
+  try {
+    // Upload through your backend proxy
+    const response = await fetch('/api/upload', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    // Show the uploaded image
+    const preview = document.getElementById('preview');
+    preview.src = result.url + '?w=400';
+    preview.style.display = 'block';
+  } catch (error) {
+    alert('Upload failed: ' + error.message);
+  }
+}
+</script>
+```
+
+## SEO Best Practices
+
+Include proper attributes for SEO:
+
+```html
+<img
+  src="https://img-src.io/i/username/product.jpg?w=800"
+  alt="Red running shoes - Nike Air Max"
+  width="800"
+  height="600"
+  loading="lazy"
+  decoding="async"
+>
+```
+
+- Always include `alt` text
+- Specify `width` and `height` to prevent layout shift
+- Use `loading="lazy"` for below-fold images
+- Use `decoding="async"` for non-critical images
+
+## CDN Domain Options
+
+You can use either domain:
+
+```html
+<!-- Primary domain (with /i/ prefix) -->
+<img src="https://img-src.io/i/username/photo.jpg?w=800">
+
+<!-- Secondary CDN domain (no prefix) -->
+<img src="https://cdn.img-src.io/username/photo.jpg?w=800">
+```
+
+Both support the same transformation parameters.

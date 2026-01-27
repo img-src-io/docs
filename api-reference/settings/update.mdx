@@ -1,0 +1,54 @@
+---
+title: Update Settings
+api: PUT /api/v1/settings
+description: Update user settings and preferences
+---
+
+<RequestExample>
+```bash cURL
+curl -X PUT https://api.img-src.io/api/v1/settings \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "default_quality": 85,
+    "default_fit_mode": "cover",
+    "delivery_formats": ["webp", "jpeg"]
+  }'
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 OK
+{
+  "settings": {
+    "id": "user_abc123",
+    "username": "johndoe",
+    "email": "john@example.com",
+    "delivery_formats": ["webp", "jpeg"],
+    "default_quality": 85,
+    "default_fit_mode": "cover",
+    "default_max_width": 1920,
+    "default_max_height": 1080,
+    "theme": "light",
+    "language": "en",
+    "created_at": 1704067200,
+    "updated_at": 1704153600,
+    "total_uploads": 150,
+    "storage_used_bytes": 104857600
+  },
+  "message": "Settings updated successfully"
+}
+```
+</ResponseExample>
+
+## Updatable Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `delivery_formats` | array | Preferred output formats in order |
+| `default_quality` | integer | Default quality (1-100) |
+| `default_fit_mode` | string | Default fit mode |
+| `default_max_width` | integer | Default max width (null to clear) |
+| `default_max_height` | integer | Default max height (null to clear) |
+| `theme` | string | UI theme preference |
+| `language` | string | UI language preference |

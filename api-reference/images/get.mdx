@@ -1,0 +1,28 @@
+---
+title: Get Image
+api: GET /api/v1/images/{id}
+description: Get image metadata by ID
+---
+
+<RequestExample>
+```bash cURL
+curl https://api.img-src.io/api/v1/images/img_abc123 \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 OK
+{
+  "id": "img_abc123",
+  "url": "https://img-src.io/i/username/photos/vacation.jpg",
+  "paths": ["photos/vacation.jpg"],
+  "content_type": "image/jpeg",
+  "size": 1234567,
+  "width": 4000,
+  "height": 3000,
+  "sha256": "abc123...",
+  "created_at": 1704067200
+}
+```
+</ResponseExample>

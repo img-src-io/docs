@@ -1,0 +1,521 @@
+---
+title: Go Integration
+description: "Using img-src with Go applications"
+---
+
+# Go Integration
+
+This guide shows how to integrate img-src into your Go applications.
+
+## Basic Usage
+
+Use the SDK or make HTTP requests directly:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "log"
+    "os"
+
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+func main() {
+    client := imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+    // Upload
+    file, err := os.Open("photo.jpg")
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer file.Close()
+
+    image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
+        File: file,
+        Path: "photos/vacation.jpg",
+    })
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    fmt.Println(image.URL)
+}
+```
+
+## URL Builder Helper
+
+Create a helper for building transformation URLs:
+
+```go
+package imgsrcutil
+
+import (
+    "fmt"
+    "net/url"
+    "strconv"
+)
+
+type TransformOptions struct {
+    Width   int
+    Height  int
+    Fit     string
+    Quality int
+    Format  string
+    Preset  string
+}
+
+func BuildURL(username, path string, opts *TransformOptions) string {
+    baseURL := fmt.Sprintf("https://img-src.io/i/%s/%s", username, path)
+
+    if opts == nil {
+        return baseURL
+    }
+
+    // Presets use p:name syntax in the URL
+    if opts.Preset != "" {
+        return baseURL + "?p:" + opts.Preset
+    }
+
+    params := url.Values{}
+    if opts.Width > 0 {
+        params.Set("w", strconv.Itoa(opts.Width))
+    }
+    if opts.Height > 0 {
+        params.Set("h", strconv.Itoa(opts.Height))
+    }
+    if opts.Fit != "" {
+        params.Set("fit", opts.Fit)
+    }
+    if opts.Quality > 0 {
+        params.Set("q", strconv.Itoa(opts.Quality))
+    }
+    // Note: Output format is determined by file extension in the path, not a query parameter
+
+    if len(params) > 0 {
+        return baseURL + "?" + params.Encode()
+    }
+    return baseURL
+}
+
+// Usage
+func main() {
+    url := BuildURL("john", "photo.jpg", &TransformOptions{
+        Width:   800,
+        Height:  600,
+        Fit:     "cover",
+        Quality: 85,
+    })
+    // https://img-src.io/i/john/photo.jpg?w=800&h=600&fit=cover&q=85
+}
+```
+
+## HTTP Handler for Uploads
+
+Create an upload endpoint:
+
+```go
+package main
+
+import (
+    "context"
+    "encoding/json"
+    "io"
+    "net/http"
+    "os"
+
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    // Parse multipart form (max 10MB)
+    if err := r.ParseMultipartForm(10 << 20); err != nil {
+        http.Error(w, "File too large", http.StatusBadRequest)
+        return
+    }
+
+    file, header, err := r.FormFile("file")
+    if err != nil {
+        http.Error(w, "No file provided", http.StatusBadRequest)
+        return
+    }
+    defer file.Close()
+
+    // Upload to img-src
+    image, err := client.Images.Upload(r.Context(), &imgsrc.UploadParams{
+        File: file,
+        Path: "uploads/" + header.Filename,
+    })
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    // Return JSON response
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(map[string]string{
+        "url": image.URL,
+    })
+}
+
+func main() {
+    http.HandleFunc("/upload", uploadHandler)
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+## Gin Framework
+
+```go
+package main
+
+import (
+    "net/http"
+    "os"
+
+    "github.com/gin-gonic/gin"
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+func main() {
+    r := gin.Default()
+
+    r.POST("/upload", func(c *gin.Context) {
+        file, header, err := c.Request.FormFile("file")
+        if err != nil {
+            c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
+            return
+        }
+        defer file.Close()
+
+        image, err := client.Images.Upload(c.Request.Context(), &imgsrc.UploadParams{
+            File: file,
+            Path: "uploads/" + header.Filename,
+        })
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+            return
+        }
+
+        c.JSON(http.StatusOK, gin.H{"url": image.URL})
+    })
+
+    r.GET("/images", func(c *gin.Context) {
+        result, err := client.Images.List(c.Request.Context(), &imgsrc.ListParams{
+            Limit: 20,
+        })
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+            return
+        }
+
+        c.JSON(http.StatusOK, result)
+    })
+
+    r.Run(":8080")
+}
+```
+
+## Echo Framework
+
+```go
+package main
+
+import (
+    "net/http"
+    "os"
+
+    "github.com/labstack/echo/v4"
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+func main() {
+    e := echo.New()
+
+    e.POST("/upload", func(c echo.Context) error {
+        file, err := c.FormFile("file")
+        if err != nil {
+            return c.JSON(http.StatusBadRequest, map[string]string{
+                "error": "No file provided",
+            })
+        }
+
+        src, err := file.Open()
+        if err != nil {
+            return c.JSON(http.StatusInternalServerError, map[string]string{
+                "error": err.Error(),
+            })
+        }
+        defer src.Close()
+
+        image, err := client.Images.Upload(c.Request().Context(), &imgsrc.UploadParams{
+            File: src,
+            Path: "uploads/" + file.Filename,
+        })
+        if err != nil {
+            return c.JSON(http.StatusInternalServerError, map[string]string{
+                "error": err.Error(),
+            })
+        }
+
+        return c.JSON(http.StatusOK, map[string]string{
+            "url": image.URL,
+        })
+    })
+
+    e.Logger.Fatal(e.Start(":8080"))
+}
+```
+
+## Fiber Framework
+
+```go
+package main
+
+import (
+    "os"
+
+    "github.com/gofiber/fiber/v2"
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+func main() {
+    app := fiber.New()
+
+    app.Post("/upload", func(c *fiber.Ctx) error {
+        file, err := c.FormFile("file")
+        if err != nil {
+            return c.Status(400).JSON(fiber.Map{
+                "error": "No file provided",
+            })
+        }
+
+        src, err := file.Open()
+        if err != nil {
+            return c.Status(500).JSON(fiber.Map{
+                "error": err.Error(),
+            })
+        }
+        defer src.Close()
+
+        image, err := client.Images.Upload(c.Context(), &imgsrc.UploadParams{
+            File: src,
+            Path: "uploads/" + file.Filename,
+        })
+        if err != nil {
+            return c.Status(500).JSON(fiber.Map{
+                "error": err.Error(),
+            })
+        }
+
+        return c.JSON(fiber.Map{
+            "url": image.URL,
+        })
+    })
+
+    app.Listen(":8080")
+}
+```
+
+## Concurrent Uploads
+
+Upload multiple images concurrently:
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+    "sync"
+
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+func uploadImages(client *imgsrc.Client, paths []string) ([]string, error) {
+    var (
+        wg      sync.WaitGroup
+        mu      sync.Mutex
+        urls    []string
+        errored error
+    )
+
+    for _, path := range paths {
+        wg.Add(1)
+        go func(p string) {
+            defer wg.Done()
+
+            file, err := os.Open(p)
+            if err != nil {
+                mu.Lock()
+                errored = err
+                mu.Unlock()
+                return
+            }
+            defer file.Close()
+
+            image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
+                File: file,
+                Path: "batch/" + filepath.Base(p),
+            })
+            if err != nil {
+                mu.Lock()
+                errored = err
+                mu.Unlock()
+                return
+            }
+
+            mu.Lock()
+            urls = append(urls, image.URL)
+            mu.Unlock()
+        }(path)
+    }
+
+    wg.Wait()
+    return urls, errored
+}
+```
+
+## Image Proxy
+
+Create a proxy that transforms images on-the-fly:
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "strconv"
+)
+
+func proxyHandler(w http.ResponseWriter, r *http.Request) {
+    username := r.URL.Query().Get("user")
+    path := r.URL.Query().Get("path")
+    width := r.URL.Query().Get("w")
+    height := r.URL.Query().Get("h")
+
+    if username == "" || path == "" {
+        http.Error(w, "Missing user or path", http.StatusBadRequest)
+        return
+    }
+
+    // Build img-src URL
+    imgURL := fmt.Sprintf("https://img-src.io/i/%s/%s", username, path)
+    if width != "" || height != "" {
+        imgURL += "?"
+        if width != "" {
+            imgURL += "w=" + width
+        }
+        if height != "" {
+            if width != "" {
+                imgURL += "&"
+            }
+            imgURL += "h=" + height
+        }
+    }
+
+    // Redirect to img-src CDN
+    http.Redirect(w, r, imgURL, http.StatusTemporaryRedirect)
+}
+
+func main() {
+    http.HandleFunc("/img", proxyHandler)
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+## HTML Template Integration
+
+```go
+package main
+
+import (
+    "html/template"
+    "net/http"
+)
+
+var tmpl = template.Must(template.New("gallery").Parse(`
+<!DOCTYPE html>
+<html>
+<head><title>Gallery</title></head>
+<body>
+    <div class="gallery">
+        {{range .Images}}
+        <img src="https://img-src.io/i/{{$.Username}}/{{.Path}}?w=300&h=300&fit=cover"
+             alt="{{.Path}}" loading="lazy">
+        {{end}}
+    </div>
+</body>
+</html>
+`))
+
+type Image struct {
+    Path string
+}
+
+type PageData struct {
+    Username string
+    Images   []Image
+}
+
+func galleryHandler(w http.ResponseWriter, r *http.Request) {
+    data := PageData{
+        Username: "john",
+        Images: []Image{
+            {Path: "photo1.jpg"},
+            {Path: "photo2.jpg"},
+            {Path: "photo3.jpg"},
+        },
+    }
+
+    tmpl.Execute(w, data)
+}
+```
+
+## Error Handling
+
+```go
+import (
+    "errors"
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+image, err := client.Images.Get(ctx, "nonexistent")
+if err != nil {
+    var notFound *imgsrc.NotFoundError
+    var rateLimit *imgsrc.RateLimitError
+    var apiErr *imgsrc.APIError
+
+    switch {
+    case errors.As(err, &notFound):
+        // Handle 404
+        log.Println("Image not found")
+    case errors.As(err, &rateLimit):
+        // Handle rate limiting
+        log.Printf("Rate limited, retry after %d seconds", rateLimit.RetryAfter)
+    case errors.As(err, &apiErr):
+        // Handle other API errors
+        log.Printf("API error: %s - %s", apiErr.Code, apiErr.Message)
+    default:
+        // Handle network/other errors
+        log.Printf("Error: %v", err)
+    }
+}
+```

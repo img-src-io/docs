@@ -1,0 +1,326 @@
+---
+title: TypeScript SDK
+description: "Official TypeScript/JavaScript SDK for img-src"
+---
+
+# TypeScript SDK
+
+The official TypeScript SDK for img-src provides type-safe access to the API with full autocompletion support.
+
+<Info>
+  **Package:** `@img-src/sdk` | **Runtime:** Node.js 18+ | [npm](https://www.npmjs.com/package/@img-src/sdk) | [GitHub](https://github.com/img-src-io/sdk-typescript)
+</Info>
+
+## Installation
+
+<CodeGroup>
+
+```bash npm
+npm install @img-src/sdk
+```
+
+```bash pnpm
+pnpm add @img-src/sdk
+```
+
+```bash yarn
+yarn add @img-src/sdk
+```
+
+</CodeGroup>
+
+## Quick Start
+
+```typescript
+import { ImgSrc } from '@img-src/sdk';
+
+const client = new ImgSrc({
+  apiKey: process.env.IMGSRC_API_KEY
+});
+
+// Upload an image
+const image = await client.images.upload({
+  file: fs.createReadStream('photo.jpg'),
+  path: 'photos/vacation.jpg'
+});
+
+console.log(image.url);
+// https://img-src.io/i/username/photos/vacation.jpg
+```
+
+## Configuration
+
+```typescript
+const client = new ImgSrc({
+  // Required
+  apiKey: 'imgsrc_YOUR_API_KEY',
+
+  // Optional
+  baseUrl: 'https://api.img-src.io', // Default
+  timeout: 30000, // Request timeout in ms
+  retries: 3, // Number of retries
+});
+```
+
+## Images
+
+### Upload
+
+```typescript
+import fs from 'fs';
+
+// From file path
+const image = await client.images.upload({
+  file: fs.createReadStream('photo.jpg'),
+  path: 'photos/vacation.jpg'
+});
+
+// From buffer
+const buffer = await fs.promises.readFile('photo.jpg');
+const image = await client.images.upload({
+  file: buffer,
+  path: 'photos/vacation.jpg',
+  contentType: 'image/jpeg'
+});
+
+// From URL (fetched server-side)
+const image = await client.images.upload({
+  url: 'https://example.com/photo.jpg',
+  path: 'photos/external.jpg'
+});
+```
+
+### List
+
+```typescript
+// List all images
+const { images, total } = await client.images.list();
+
+// With pagination
+const { images } = await client.images.list({
+  limit: 20,
+  offset: 40
+});
+
+// Filter by path prefix
+const { images } = await client.images.list({
+  prefix: 'photos/'
+});
+```
+
+### Search
+
+```typescript
+const { images } = await client.images.search({
+  query: 'vacation',
+  limit: 10
+});
+```
+
+### Get
+
+```typescript
+const image = await client.images.get('img_abc123');
+console.log(image.width, image.height);
+```
+
+### Delete
+
+```typescript
+await client.images.delete('img_abc123');
+```
+
+### Create Signed URL (Pro)
+
+```typescript
+const { signed_url, expires_at } = await client.images.createSignedUrl('img_abc123', {
+  expiresIn: 3600, // 1 hour
+  transform: {
+    w: 800,
+    h: 600,
+    fit: 'cover'
+  }
+});
+```
+
+## URL Builder
+
+Build transformation URLs without making API calls:
+
+```typescript
+// Simple resize
+const url = client.url('username/photo.jpg')
+  .width(800)
+  .build();
+// https://img-src.io/i/username/photo.jpg?w=800
+
+// Full transformation (output format determined by file extension)
+const url = client.url('username/photo.webp')
+  .width(800)
+  .height(600)
+  .fit('cover')
+  .quality(85)
+  .build();
+// https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
+
+// Using a preset (Pro)
+const url = client.url('username/photo.jpg')
+  .preset('thumbnail')
+  .build();
+// https://img-src.io/i/username/photo.jpg?p:thumbnail
+```
+
+## Settings
+
+```typescript
+// Get settings
+const { settings } = await client.settings.get();
+
+// Update settings
+await client.settings.update({
+  default_quality: 85,
+  default_fit_mode: 'cover'
+});
+```
+
+## API Keys
+
+```typescript
+// List keys
+const { api_keys } = await client.apiKeys.list();
+
+// Create key
+const { key } = await client.apiKeys.create({
+  name: 'Production',
+  scopes: ['read', 'write'],
+  expiresInDays: 90
+});
+
+// Delete key
+await client.apiKeys.delete('key_id');
+```
+
+## Presets (Pro)
+
+```typescript
+// List presets
+const { presets } = await client.presets.list();
+
+// Create preset
+const preset = await client.presets.create({
+  name: 'thumbnail',
+  params: { w: 200, h: 200, fit: 'cover' }
+});
+
+// Update preset
+await client.presets.update('preset_id', {
+  params: { w: 250, h: 250, fit: 'cover' }
+});
+
+// Delete preset
+await client.presets.delete('thumbnail');
+```
+
+## Usage
+
+```typescript
+const { usage, billing_period, plan } = await client.usage.get();
+
+console.log(`Transformations: ${usage.transformations.used}/${usage.transformations.limit}`);
+console.log(`Storage: ${usage.storage.used_bytes} bytes`);
+```
+
+## Error Handling
+
+```typescript
+import { ImgSrc, ImgSrcError, RateLimitError, NotFoundError } from '@img-src/sdk';
+
+try {
+  await client.images.get('nonexistent');
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.log('Image not found');
+  } else if (error instanceof RateLimitError) {
+    console.log(`Rate limited. Retry after ${error.retryAfter}s`);
+  } else if (error instanceof ImgSrcError) {
+    console.log(`API error: ${error.code} - ${error.message}`);
+  }
+}
+```
+
+## TypeScript Types
+
+All types are exported:
+
+```typescript
+import type {
+  Image,
+  ImageUploadParams,
+  Settings,
+  Preset,
+  ApiKey,
+  Usage
+} from '@img-src/sdk';
+```
+
+## Framework Examples
+
+### Next.js
+
+```typescript
+// app/api/upload/route.ts
+import { ImgSrc } from '@img-src/sdk';
+import { NextResponse } from 'next/server';
+
+const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+
+export async function POST(request: Request) {
+  const formData = await request.formData();
+  const file = formData.get('file') as File;
+
+  const image = await client.images.upload({
+    file: Buffer.from(await file.arrayBuffer()),
+    path: `uploads/${file.name}`,
+    contentType: file.type
+  });
+
+  return NextResponse.json(image);
+}
+```
+
+### Express
+
+```typescript
+import express from 'express';
+import multer from 'multer';
+import { ImgSrc } from '@img-src/sdk';
+
+const app = express();
+const upload = multer();
+const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+
+app.post('/upload', upload.single('file'), async (req, res) => {
+  const image = await client.images.upload({
+    file: req.file!.buffer,
+    path: `uploads/${req.file!.originalname}`,
+    contentType: req.file!.mimetype
+  });
+
+  res.json(image);
+});
+```
+
+## Browser Usage
+
+<Warning>
+  Never expose your API key in client-side code. Use a backend proxy.
+</Warning>
+
+The SDK is designed for server-side use. For client-side applications, create a backend API endpoint that proxies requests.
+
+## Related
+
+- [API Reference](/api-reference/overview) - Full API documentation
+- [Image Transformation Guide](/guides/image-transformation) - Transformation parameters
+- [React Integration](/examples/react) - Using img-src with React
+- [Next.js Integration](/examples/nextjs) - Using img-src with Next.js

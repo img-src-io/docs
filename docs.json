@@ -1,0 +1,116 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "img-src Docs",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#3B82F6",
+    "light": "#60A5FA",
+    "dark": "#1D4ED8"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Feedback",
+        "href": "mailto:support@img-src.io"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get Started",
+      "href": "https://img-src.io/sign-up"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/image-transformation",
+              "guides/authentication",
+              "guides/presets"
+            ]
+          },
+          {
+            "group": "SDKs",
+            "pages": ["sdk/typescript", "sdk/python", "sdk/go", "sdk/rust"]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/react",
+              "examples/nextjs",
+              "examples/html",
+              "examples/go",
+              "examples/rust"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["api-reference/overview"]
+          },
+          {
+            "group": "Images",
+            "pages": [
+              "api-reference/images/upload",
+              "api-reference/images/list",
+              "api-reference/images/search",
+              "api-reference/images/get",
+              "api-reference/images/delete",
+              "api-reference/images/signed-url"
+            ]
+          },
+          {
+            "group": "Settings",
+            "pages": [
+              "api-reference/settings/get",
+              "api-reference/settings/update"
+            ]
+          },
+          {
+            "group": "Presets (Pro)",
+            "pages": [
+              "api-reference/presets/list",
+              "api-reference/presets/create",
+              "api-reference/presets/update",
+              "api-reference/presets/delete"
+            ]
+          },
+          {
+            "group": "Usage",
+            "pages": ["api-reference/usage/get"]
+          }
+        ]
+      }
+    ]
+  },
+  "openapi": "api-reference/openapi.json",
+  "api": {
+    "baseUrl": "https://api.img-src.io",
+    "auth": {
+      "method": "bearer"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/img-src-io",
+      "x": "https://x.com/img_src_io"
+    }
+  }
+}

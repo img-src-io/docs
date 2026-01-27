@@ -1,0 +1,464 @@
+---
+title: Rust SDK
+description: "Official Rust SDK for img-src"
+---
+
+# Rust SDK
+
+The official Rust SDK for img-src provides a type-safe, async-first interface to the API.
+
+<Info>
+  **Crate:** `imgsrc` | **Edition:** 2021 | [crates.io](https://crates.io/crates/imgsrc) | [GitHub](https://github.com/img-src-io/sdk-rust)
+</Info>
+
+## Installation
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+imgsrc = "0.1"
+tokio = { version = "1", features = ["full"] }
+```
+
+## Quick Start
+
+```rust
+use imgsrc::Client;
+use std::path::Path;
+
+#[tokio::main]
+async fn main() -> Result<(), imgsrc::Error> {
+    let client = Client::new("imgsrc_YOUR_API_KEY");
+
+    // Upload an image
+    let image = client
+        .images()
+        .upload(Path::new("photo.jpg"))
+        .path("photos/vacation.jpg")
+        .send()
+        .await?;
+
+    println!("{}", image.url);
+    // https://img-src.io/i/username/photos/vacation.jpg
+
+    Ok(())
+}
+```
+
+## Configuration
+
+```rust
+use imgsrc::{Client, Config};
+use std::time::Duration;
+
+let config = Config::builder()
+    .api_key("imgsrc_YOUR_API_KEY")
+    .base_url("https://api.img-src.io")
+    .timeout(Duration::from_secs(30))
+    .retries(3)
+    .build();
+
+let client = Client::with_config(config);
+```
+
+### Environment Variables
+
+```rust
+use imgsrc::Client;
+
+// Reads IMGSRC_API_KEY from environment
+let client = Client::from_env()?;
+```
+
+## Images
+
+### Upload
+
+```rust
+use imgsrc::Client;
+use std::path::Path;
+
+let client = Client::new("imgsrc_YOUR_API_KEY");
+
+// From file path
+let image = client
+    .images()
+    .upload(Path::new("photo.jpg"))
+    .path("photos/vacation.jpg")
+    .send()
+    .await?;
+
+// From bytes
+let bytes = std::fs::read("photo.jpg")?;
+let image = client
+    .images()
+    .upload_bytes(&bytes)
+    .path("photos/vacation.jpg")
+    .content_type("image/jpeg")
+    .send()
+    .await?;
+
+// From URL
+let image = client
+    .images()
+    .upload_url("https://example.com/photo.jpg")
+    .path("photos/external.jpg")
+    .send()
+    .await?;
+```
+
+### List
+
+```rust
+// List all images
+let result = client.images().list().send().await?;
+for image in result.images {
+    println!("{}", image.url);
+}
+
+// With pagination
+let result = client
+    .images()
+    .list()
+    .limit(20)
+    .offset(40)
+    .send()
+    .await?;
+
+// Filter by prefix
+let result = client
+    .images()
+    .list()
+    .prefix("photos/")
+    .send()
+    .await?;
+```
+
+### Search
+
+```rust
+let result = client
+    .images()
+    .search("vacation")
+    .limit(10)
+    .send()
+    .await?;
+
+for image in result.images {
+    println!("{:?}", image.paths);
+}
+```
+
+### Get
+
+```rust
+let image = client.images().get("img_abc123").await?;
+println!("Dimensions: {}x{}", image.width, image.height);
+```
+
+### Delete
+
+```rust
+client.images().delete("img_abc123").await?;
+```
+
+### Create Signed URL (Pro)
+
+```rust
+use imgsrc::Transform;
+
+let result = client
+    .images()
+    .create_signed_url("img_abc123")
+    .expires_in(3600) // 1 hour
+    .transform(Transform {
+        width: Some(800),
+        height: Some(600),
+        fit: Some("cover".into()),
+        ..Default::default()
+    })
+    .send()
+    .await?;
+
+println!("{}", result.signed_url);
+```
+
+## URL Builder
+
+Build transformation URLs without API calls:
+
+```rust
+use imgsrc::UrlBuilder;
+
+// Simple resize
+let url = UrlBuilder::new("username/photo.jpg")
+    .width(800)
+    .build();
+// https://img-src.io/i/username/photo.jpg?w=800
+
+// Full transformation (output format determined by file extension)
+let url = UrlBuilder::new("username/photo.webp")
+    .width(800)
+    .height(600)
+    .fit("cover")
+    .quality(85)
+    .build();
+// https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
+
+// Using a preset (Pro)
+let url = UrlBuilder::new("username/photo.jpg")
+    .preset("thumbnail")
+    .build();
+// https://img-src.io/i/username/photo.jpg?p:thumbnail
+```
+
+## Settings
+
+```rust
+// Get settings
+let settings = client.settings().get().await?;
+println!("Quality: {}", settings.default_quality);
+
+// Update settings
+client
+    .settings()
+    .update()
+    .default_quality(85)
+    .default_fit_mode("cover")
+    .send()
+    .await?;
+```
+
+## API Keys
+
+```rust
+// List keys
+let result = client.api_keys().list().await?;
+for key in result.api_keys {
+    println!("{}: {}...", key.name, key.key_prefix);
+}
+
+// Create key
+let new_key = client
+    .api_keys()
+    .create("Production")
+    .scopes(vec!["read", "write"])
+    .expires_in_days(90)
+    .send()
+    .await?;
+println!("Save this key: {}", new_key.key);
+
+// Delete key
+client.api_keys().delete("key_id").await?;
+```
+
+## Presets (Pro)
+
+```rust
+use std::collections::HashMap;
+
+// List presets
+let result = client.presets().list().await?;
+
+// Create preset
+let mut params = HashMap::new();
+params.insert("w", 200.into());
+params.insert("h", 200.into());
+params.insert("fit", "cover".into());
+
+let preset = client
+    .presets()
+    .create("thumbnail")
+    .params(params)
+    .send()
+    .await?;
+
+// Update preset
+client
+    .presets()
+    .update("preset_id")
+    .params(params)
+    .send()
+    .await?;
+
+// Delete preset
+client.presets().delete("thumbnail").await?;
+```
+
+## Usage
+
+```rust
+let usage = client.usage().get().await?;
+
+println!(
+    "Transformations: {}/{}",
+    usage.transformations.used,
+    usage.transformations.limit
+);
+println!("Storage: {} bytes", usage.storage.used_bytes);
+println!("Plan: {}", usage.plan);
+```
+
+## Error Handling
+
+```rust
+use imgsrc::{Client, Error};
+
+let result = client.images().get("nonexistent").await;
+
+match result {
+    Ok(image) => println!("Found: {}", image.url),
+    Err(Error::NotFound) => println!("Image not found"),
+    Err(Error::RateLimit { retry_after }) => {
+        println!("Rate limited. Retry after {}s", retry_after);
+    }
+    Err(Error::Api { code, message, .. }) => {
+        println!("API error: {} - {}", code, message);
+    }
+    Err(e) => println!("Other error: {}", e),
+}
+```
+
+## Types
+
+All types are exported from the crate root:
+
+```rust
+use imgsrc::{
+    Client,
+    Image,
+    Settings,
+    Preset,
+    ApiKey,
+    Usage,
+    Transform,
+    Error,
+};
+```
+
+## Axum Example
+
+```rust
+use axum::{
+    extract::{Multipart, State},
+    response::Json,
+    routing::post,
+    Router,
+};
+use imgsrc::Client;
+use serde_json::{json, Value};
+use std::sync::Arc;
+
+struct AppState {
+    imgsrc: Client,
+}
+
+async fn upload(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Json<Value> {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        if field.name() == Some("file") {
+            let filename = field.file_name().unwrap_or("upload").to_string();
+            let data = field.bytes().await.unwrap();
+
+            let image = state
+                .imgsrc
+                .images()
+                .upload_bytes(&data)
+                .path(&format!("uploads/{}", filename))
+                .send()
+                .await
+                .unwrap();
+
+            return Json(json!({ "url": image.url }));
+        }
+    }
+
+    Json(json!({ "error": "No file provided" }))
+}
+
+#[tokio::main]
+async fn main() {
+    let state = Arc::new(AppState {
+        imgsrc: Client::from_env().unwrap(),
+    });
+
+    let app = Router::new()
+        .route("/upload", post(upload))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+## Related
+
+- [API Reference](/api-reference/overview) - Full API documentation
+- [Image Transformation Guide](/guides/image-transformation) - Transformation parameters
+- [Rust Integration Examples](/examples/rust) - More Rust examples with Axum, Actix-web, and CLI
+
+## Actix-web Example
+
+```rust
+use actix_multipart::Multipart;
+use actix_web::{web, App, HttpResponse, HttpServer};
+use futures_util::StreamExt;
+use imgsrc::Client;
+
+async fn upload(
+    client: web::Data<Client>,
+    mut payload: Multipart,
+) -> HttpResponse {
+    while let Some(Ok(mut field)) = payload.next().await {
+        let mut data = Vec::new();
+        while let Some(Ok(chunk)) = field.next().await {
+            data.extend_from_slice(&chunk);
+        }
+
+        let filename = field
+            .content_disposition()
+            .get_filename()
+            .unwrap_or("upload");
+
+        match client
+            .images()
+            .upload_bytes(&data)
+            .path(&format!("uploads/{}", filename))
+            .send()
+            .await
+        {
+            Ok(image) => {
+                return HttpResponse::Ok().json(serde_json::json!({
+                    "url": image.url
+                }));
+            }
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+
+    HttpResponse::BadRequest().json(serde_json::json!({
+        "error": "No file provided"
+    }))
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let client = web::Data::new(Client::from_env().unwrap());
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(client.clone())
+            .route("/upload", web::post().to(upload))
+    })
+    .bind("0.0.0.0:8080")?
+    .run()
+    .await
+}
+```

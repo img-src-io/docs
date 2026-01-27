@@ -1,0 +1,4369 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "img-src API",
+    "version": "1.0.0",
+    "description": "Image processing and delivery API.\n\nA serverless image processing and delivery API built on Cloudflare Workers with parameter-driven image transformation and on-demand transcoding.\n\n## Features\n\n- **Image Upload**: Store original images in R2 with SHA256-based deduplication\n- **On-Demand Transformation**: Resize, crop, and convert images via URL parameters\n- **Format Conversion**: WebP, AVIF, JPEG, PNG output formats\n- **Path Organization**: Organize images into folders with multiple paths per image\n- **CDN Caching**: Automatic edge caching for transformed images\n\n## Authentication\n\nThe API supports two authentication methods:\n1. **JWT Tokens**: For web application sessions (via Clerk)\n2. **API Keys**: For programmatic access (`imgsrc_` prefix)\n\n## Rate Limiting\n\n- **Free Plan**: 100 requests/minute\n- **Pro Plan**: 500 requests/minute\n\nRate limit headers are included in all responses.",
+    "contact": {
+      "name": "API Support",
+      "url": "https://img-src.io"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://api.img-src.io",
+      "description": "Production"
+    },
+    {
+      "url": "https://api-ts.img-src.io",
+      "description": "TypeScript API (Development)"
+    },
+    {
+      "url": "http://localhost:8787",
+      "description": "Local Development"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT or API Key",
+        "description": "JWT token from Clerk or API key with `imgsrc_` prefix"
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Service status",
+            "example": "ok"
+          },
+          "timestamp": {
+            "type": "string",
+            "description": "Current timestamp (RFC3339)",
+            "example": "2025-01-21T12:00:00Z"
+          }
+        },
+        "required": [
+          "status",
+          "timestamp"
+        ]
+      },
+      "UserSettings": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Clerk user ID",
+            "example": "user_abc123"
+          },
+          "username": {
+            "type": "string",
+            "description": "Username",
+            "example": "johndoe"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address",
+            "example": "john@example.com"
+          },
+          "plan": {
+            "type": "string",
+            "description": "Subscription plan (free or pro)",
+            "example": "pro"
+          },
+          "delivery_formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preferred delivery formats (ordered)",
+            "example": [
+              "webp",
+              "avif",
+              "jpeg"
+            ]
+          },
+          "default_quality": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Default image quality (1-100)",
+            "example": 80
+          },
+          "default_fit_mode": {
+            "type": "string",
+            "description": "Default fit mode",
+            "example": "contain"
+          },
+          "default_max_width": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Default maximum width",
+            "example": 1920
+          },
+          "default_max_height": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Default maximum height",
+            "example": 1080
+          },
+          "theme": {
+            "type": "string",
+            "description": "UI theme",
+            "example": "light"
+          },
+          "language": {
+            "type": "string",
+            "description": "UI language",
+            "example": "en"
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "Account creation timestamp (Unix epoch)",
+            "example": 1704067200
+          },
+          "updated_at": {
+            "type": "integer",
+            "description": "Last update timestamp (Unix epoch)",
+            "example": 1704067200
+          },
+          "total_uploads": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of uploads",
+            "example": 150
+          },
+          "storage_used_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total storage used in bytes",
+            "example": 104857600
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "plan",
+          "delivery_formats",
+          "default_quality",
+          "default_fit_mode",
+          "theme",
+          "language",
+          "created_at",
+          "updated_at",
+          "total_uploads",
+          "storage_used_bytes"
+        ]
+      },
+      "SettingsResponse": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/UserSettings"
+          }
+        },
+        "required": [
+          "settings"
+        ]
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Error code (e.g., NOT_FOUND, UNAUTHORIZED, VALIDATION_ERROR)",
+            "example": "NOT_FOUND"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message",
+            "example": "The requested resource was not found"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599,
+            "description": "HTTP status code",
+            "example": 404
+          },
+          "path": {
+            "type": "string",
+            "description": "Request path (optional)",
+            "example": "/api/v1/images/nonexistent"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "status"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "SettingsUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/UserSettings"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Settings updated successfully"
+          }
+        },
+        "required": [
+          "settings",
+          "message"
+        ]
+      },
+      "UpdateSettingsRequest": {
+        "type": "object",
+        "properties": {
+          "delivery_formats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Preferred delivery formats (ordered)",
+            "example": [
+              "webp",
+              "avif",
+              "jpeg"
+            ]
+          },
+          "default_quality": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Default image quality (1-100)",
+            "example": 80
+          },
+          "default_fit_mode": {
+            "type": "string",
+            "description": "Default fit mode",
+            "example": "contain"
+          },
+          "default_max_width": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Default maximum width (null to clear)",
+            "example": 1920
+          },
+          "default_max_height": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Default maximum height (null to clear)",
+            "example": 1080
+          },
+          "theme": {
+            "type": "string",
+            "description": "UI theme",
+            "example": "dark"
+          },
+          "language": {
+            "type": "string",
+            "description": "UI language",
+            "example": "ko"
+          }
+        }
+      },
+      "Preset": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Preset ID",
+            "example": "preset_abc123"
+          },
+          "name": {
+            "type": "string",
+            "description": "Preset name",
+            "example": "thumbnail"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional description",
+            "example": "200x200 thumbnail with cover fit"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "Transformation parameters",
+            "example": {
+              "w": 200,
+              "h": 200,
+              "fit": "cover",
+              "format": "webp"
+            }
+          },
+          "created_at": {
+            "type": "integer",
+            "description": "Creation timestamp (Unix epoch)",
+            "example": 1704067200
+          },
+          "updated_at": {
+            "type": "integer",
+            "description": "Last update timestamp (Unix epoch)",
+            "example": 1704067200
+          },
+          "usage_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of times this preset has been used",
+            "example": 42
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "params",
+          "created_at",
+          "updated_at",
+          "usage_count"
+        ]
+      },
+      "ListPresetsResponse": {
+        "type": "object",
+        "properties": {
+          "presets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Preset"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of presets",
+            "example": 5
+          }
+        },
+        "required": [
+          "presets",
+          "total"
+        ]
+      },
+      "CreatePresetRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "Preset name (1-50 characters)",
+            "example": "thumbnail"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Optional description (max 200 characters)",
+            "example": "200x200 thumbnail with cover fit"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "Transformation parameters",
+            "example": {
+              "w": 200,
+              "h": 200,
+              "fit": "cover",
+              "format": "webp"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "params"
+        ]
+      },
+      "UpdatePresetRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "New preset name (1-50 characters)",
+            "example": "card-image"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200,
+            "description": "New description (max 200 characters, null to clear)",
+            "example": "Card thumbnail for product listings"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "description": "New transformation parameters",
+            "example": {
+              "w": 400,
+              "h": 300,
+              "fit": "cover"
+            }
+          }
+        }
+      },
+      "DeletePresetResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Preset has been deleted"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ]
+      },
+      "PlanLimits": {
+        "type": "object",
+        "properties": {
+          "max_uploads_per_month": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Maximum uploads per month (null = unlimited)",
+            "example": 1000
+          },
+          "max_storage_bytes": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Maximum storage in bytes (null = unlimited)",
+            "example": 5368709120
+          },
+          "max_bandwidth_per_month": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Maximum bandwidth per month in bytes (null = unlimited)",
+            "example": 10737418240
+          },
+          "max_api_requests_per_month": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Maximum API requests per month (null = unlimited)",
+            "example": 100000
+          },
+          "max_transformations_per_month": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Maximum image transformations per month (null = unlimited)",
+            "example": 10000
+          }
+        },
+        "required": [
+          "max_uploads_per_month",
+          "max_storage_bytes",
+          "max_bandwidth_per_month",
+          "max_api_requests_per_month",
+          "max_transformations_per_month"
+        ]
+      },
+      "CurrentPeriod": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "Period identifier (YYYY-MM format)",
+            "example": "2025-01"
+          },
+          "period_start": {
+            "type": "integer",
+            "description": "Unix timestamp of period start",
+            "example": 1735689600
+          },
+          "period_end": {
+            "type": "integer",
+            "description": "Unix timestamp of period end",
+            "example": 1738368000
+          },
+          "uploads": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Uploads this period",
+            "example": 42
+          },
+          "bandwidth_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bandwidth used this period in bytes",
+            "example": 1073741824
+          },
+          "api_requests": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "API requests this period",
+            "example": 5000
+          },
+          "transformations": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Image transformations this period",
+            "example": 500
+          }
+        },
+        "required": [
+          "period",
+          "period_start",
+          "period_end",
+          "uploads",
+          "bandwidth_bytes",
+          "api_requests",
+          "transformations"
+        ]
+      },
+      "Credits": {
+        "type": "object",
+        "properties": {
+          "storage_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Available storage credit in bytes",
+            "example": 10737418240
+          },
+          "api_requests": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Available API request credits",
+            "example": 10000
+          },
+          "transformations": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Available transformation credits",
+            "example": 10000
+          }
+        },
+        "required": [
+          "storage_bytes",
+          "api_requests",
+          "transformations"
+        ]
+      },
+      "UsageResponse": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string",
+            "description": "User's plan ID",
+            "example": "free"
+          },
+          "plan_name": {
+            "type": "string",
+            "description": "Human-readable plan name",
+            "example": "Free Plan"
+          },
+          "plan_status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "cancelling",
+              "expired"
+            ],
+            "description": "Current plan status",
+            "example": "active"
+          },
+          "subscription_ends_at": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Unix timestamp when subscription ends (for cancelling plans)",
+            "example": null
+          },
+          "plan_limits": {
+            "$ref": "#/components/schemas/PlanLimits"
+          },
+          "total_images": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total images (lifetime)",
+            "example": 150
+          },
+          "storage_used_bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total storage used in bytes",
+            "example": 104857600
+          },
+          "storage_used_mb": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Total storage used in MB",
+            "example": 100
+          },
+          "storage_used_gb": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Total storage used in GB",
+            "example": 0.1
+          },
+          "current_period": {
+            "$ref": "#/components/schemas/CurrentPeriod"
+          },
+          "credits": {
+            "$ref": "#/components/schemas/Credits"
+          }
+        },
+        "required": [
+          "plan",
+          "plan_name",
+          "plan_status",
+          "subscription_ends_at",
+          "plan_limits",
+          "total_images",
+          "storage_used_bytes",
+          "storage_used_mb",
+          "storage_used_gb",
+          "current_period",
+          "credits"
+        ]
+      },
+      "ImageDimensions": {
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Image width in pixels",
+            "example": 1920
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Image height in pixels",
+            "example": 1080
+          }
+        },
+        "required": [
+          "width",
+          "height"
+        ]
+      },
+      "AvailableFormats": {
+        "type": "object",
+        "properties": {
+          "webp": {
+            "type": "string",
+            "format": "uri",
+            "description": "WebP format URL",
+            "example": "https://img-src.io/i/john/photo.webp"
+          },
+          "avif": {
+            "type": "string",
+            "format": "uri",
+            "description": "AVIF format URL",
+            "example": "https://img-src.io/i/john/photo.avif"
+          },
+          "jpeg": {
+            "type": "string",
+            "format": "uri",
+            "description": "JPEG format URL",
+            "example": "https://img-src.io/i/john/photo.jpg"
+          }
+        },
+        "required": [
+          "webp",
+          "avif",
+          "jpeg"
+        ]
+      },
+      "HateoasLinks": {
+        "type": "object",
+        "properties": {
+          "self": {
+            "type": "string",
+            "description": "Link to the resource itself",
+            "example": "/api/v1/images/abc123"
+          },
+          "delete": {
+            "type": "string",
+            "description": "Link to delete the resource",
+            "example": "/api/v1/images/abc123"
+          }
+        },
+        "required": [
+          "self",
+          "delete"
+        ]
+      },
+      "UploadResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Image ID (first 16 characters of SHA256 hash)",
+            "example": "abcdef1234567890"
+          },
+          "hash": {
+            "type": "string",
+            "description": "Full SHA256 hash of the image content",
+            "example": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          },
+          "url": {
+            "type": "string",
+            "description": "Primary CDN URL for the image",
+            "example": "/john/blog/2024/photo.png"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All paths where this image is accessible",
+            "example": [
+              "blog/2024/photo.png"
+            ]
+          },
+          "is_new": {
+            "type": "boolean",
+            "description": "Whether this is a newly uploaded image (false if duplicate)",
+            "example": true
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "File size in bytes",
+            "example": 1024000
+          },
+          "format": {
+            "type": "string",
+            "description": "Detected image format",
+            "example": "png"
+          },
+          "dimensions": {
+            "$ref": "#/components/schemas/ImageDimensions"
+          },
+          "available_formats": {
+            "$ref": "#/components/schemas/AvailableFormats"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Upload timestamp (RFC3339 format)",
+            "example": "2025-01-21T12:00:00Z"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Image visibility: 'public' (accessible via CDN) or 'private' (requires signed URL)",
+            "example": "public"
+          },
+          "_links": {
+            "$ref": "#/components/schemas/HateoasLinks"
+          }
+        },
+        "required": [
+          "id",
+          "hash",
+          "url",
+          "paths",
+          "size",
+          "format",
+          "available_formats",
+          "uploaded_at",
+          "visibility",
+          "_links"
+        ]
+      },
+      "ActiveSignedUrl": {
+        "type": "object",
+        "properties": {
+          "signed_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "The active signed URL",
+            "example": "https://cdn.img-src.io/john/photo.webp?sig=abc123"
+          },
+          "expires_at": {
+            "type": "integer",
+            "description": "Expiration timestamp (Unix epoch)",
+            "example": 1704153600
+          }
+        },
+        "required": [
+          "signed_url",
+          "expires_at"
+        ],
+        "description": "Active signed URL info for private images (if exists)"
+      },
+      "ImageListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Image ID",
+            "example": "abcdef1234567890"
+          },
+          "original_filename": {
+            "type": "string",
+            "description": "Original filename as uploaded",
+            "example": "my-photo.jpg"
+          },
+          "sanitized_filename": {
+            "type": "string",
+            "description": "Sanitized filename (URL-safe)",
+            "example": "my-photo.jpg"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "File size in bytes",
+            "example": 1024000
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Upload timestamp",
+            "example": "2025-01-21T12:00:00Z"
+          },
+          "url": {
+            "type": "string",
+            "description": "API endpoint URL",
+            "example": "/api/v1/images/abcdef1234567890"
+          },
+          "cdn_url": {
+            "type": "string",
+            "description": "CDN URL for direct access",
+            "example": "https://img-src.io/i/john/photo.webp"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All paths for this image",
+            "example": [
+              "photo.webp",
+              "blog/photo.webp"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Image visibility: 'public' (accessible via CDN) or 'private' (requires signed URL)",
+            "example": "public"
+          },
+          "active_signed_url": {
+            "$ref": "#/components/schemas/ActiveSignedUrl"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "size",
+          "uploaded_at",
+          "url",
+          "paths",
+          "visibility"
+        ]
+      },
+      "FolderItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name",
+            "example": "blog"
+          },
+          "image_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of images in folder (including subfolders)",
+            "example": 42
+          }
+        },
+        "required": [
+          "name",
+          "image_count"
+        ]
+      },
+      "ImageListResponse": {
+        "type": "object",
+        "properties": {
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageListItem"
+            }
+          },
+          "folders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FolderItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total count of images (in current path)",
+            "example": 150
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum items per page",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Current offset",
+            "example": 0
+          },
+          "has_more": {
+            "type": "boolean",
+            "description": "Whether more items exist",
+            "example": true
+          },
+          "path_filter": {
+            "type": "string",
+            "description": "Current path filter (if any)",
+            "example": "blog/2024"
+          }
+        },
+        "required": [
+          "images",
+          "folders",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ]
+      },
+      "SearchResult": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Image ID",
+            "example": "abcdef1234567890"
+          },
+          "original_filename": {
+            "type": "string",
+            "description": "Original filename",
+            "example": "vacation-photo.jpg"
+          },
+          "sanitized_filename": {
+            "type": "string",
+            "description": "Sanitized filename",
+            "example": "vacation-photo.jpg"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All paths for this image",
+            "example": [
+              "photos/vacation.jpg"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "File size in bytes",
+            "example": 1024000
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Upload timestamp",
+            "example": "2025-01-21T12:00:00Z"
+          },
+          "url": {
+            "type": "string",
+            "description": "API endpoint URL",
+            "example": "/api/v1/images/abcdef1234567890"
+          },
+          "cdn_url": {
+            "type": "string",
+            "description": "CDN URL",
+            "example": "https://img-src.io/i/john/photos/vacation.jpg"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Image visibility: 'public' (accessible via CDN) or 'private' (requires signed URL)",
+            "example": "public"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "paths",
+          "size",
+          "uploaded_at",
+          "url",
+          "visibility"
+        ]
+      },
+      "SearchResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total number of matches",
+            "example": 5
+          },
+          "query": {
+            "type": "string",
+            "description": "Original search query",
+            "example": "vacation"
+          }
+        },
+        "required": [
+          "results",
+          "total",
+          "query"
+        ]
+      },
+      "ImageMetadata": {
+        "type": "object",
+        "properties": {
+          "hash": {
+            "type": "string",
+            "description": "Full SHA256 hash",
+            "example": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+          },
+          "original_filename": {
+            "type": "string",
+            "description": "Original filename as uploaded",
+            "example": "vacation-photo.jpg"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "File size in bytes",
+            "example": 2048576
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Upload timestamp",
+            "example": "2025-01-21T12:00:00Z"
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "MIME type",
+            "example": "image/jpeg"
+          },
+          "width": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Image width in pixels",
+            "example": 1920
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Image height in pixels",
+            "example": 1080
+          },
+          "dominant_color": {
+            "type": "string",
+            "description": "Dominant color as 6-digit hex (without #)",
+            "example": "3b82f6"
+          }
+        },
+        "required": [
+          "hash",
+          "original_filename",
+          "size",
+          "uploaded_at",
+          "mime_type"
+        ]
+      },
+      "CdnUrls": {
+        "type": "object",
+        "properties": {
+          "original": {
+            "type": "string",
+            "format": "uri",
+            "description": "Original format URL",
+            "example": "https://img-src.io/i/john/photo.jpg"
+          },
+          "webp": {
+            "type": "string",
+            "format": "uri",
+            "description": "WebP format URL",
+            "example": "https://img-src.io/i/john/photo.webp"
+          },
+          "avif": {
+            "type": "string",
+            "format": "uri",
+            "description": "AVIF format URL",
+            "example": "https://img-src.io/i/john/photo.avif"
+          },
+          "jpeg": {
+            "type": "string",
+            "format": "uri",
+            "description": "JPEG format URL",
+            "example": "https://img-src.io/i/john/photo.jpg"
+          },
+          "png": {
+            "type": "string",
+            "format": "uri",
+            "description": "PNG format URL",
+            "example": "https://img-src.io/i/john/photo.png"
+          }
+        },
+        "required": [
+          "original",
+          "webp",
+          "avif",
+          "jpeg",
+          "png"
+        ]
+      },
+      "MetadataResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Image ID",
+            "example": "abcdef1234567890"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ImageMetadata"
+          },
+          "urls": {
+            "$ref": "#/components/schemas/CdnUrls"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Image visibility: 'public' (accessible via CDN) or 'private' (requires signed URL)",
+            "example": "public"
+          },
+          "_links": {
+            "$ref": "#/components/schemas/HateoasLinks"
+          }
+        },
+        "required": [
+          "id",
+          "metadata",
+          "urls",
+          "visibility",
+          "_links"
+        ]
+      },
+      "DeleteResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Image deleted"
+          },
+          "deleted_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of deleted paths",
+            "example": [
+              "photo.webp",
+              "blog/photo.webp"
+            ]
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deletion timestamp",
+            "example": "2025-01-21T12:00:00Z"
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "deleted_at"
+        ]
+      },
+      "SignedUrlResponse": {
+        "type": "object",
+        "properties": {
+          "signed_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Time-limited signed URL",
+            "example": "https://img-src.io/i/john/photo.webp?token=xxx&expires=1704153600"
+          },
+          "expires_at": {
+            "type": "integer",
+            "description": "Expiration timestamp (Unix epoch)",
+            "example": 1704153600
+          },
+          "expires_in_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "exclusiveMinimum": true,
+            "description": "Seconds until expiration",
+            "example": 3600
+          }
+        },
+        "required": [
+          "signed_url",
+          "expires_at",
+          "expires_in_seconds"
+        ]
+      },
+      "CreateSignedUrlRequest": {
+        "type": "object",
+        "properties": {
+          "expires_in_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 604800,
+            "default": 3600,
+            "description": "Expiration time in seconds (60-604800, default 3600). Max 7 days.",
+            "example": 3600
+          }
+        }
+      },
+      "PathDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Path removed"
+          },
+          "remaining_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Remaining paths for the image",
+            "example": [
+              "blog/photo.webp"
+            ]
+          },
+          "image_deleted": {
+            "type": "boolean",
+            "description": "Whether the image itself was deleted (last path removed)",
+            "example": false
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Deletion timestamp",
+            "example": "2025-01-21T12:00:00Z"
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "remaining_paths",
+          "image_deleted",
+          "deleted_at"
+        ]
+      },
+      "UpdateVisibilityResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Image ID",
+            "example": "abcdef1234567890"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Image visibility: 'public' (accessible via CDN) or 'private' (requires signed URL)",
+            "example": "public"
+          },
+          "message": {
+            "type": "string",
+            "description": "Success message",
+            "example": "Visibility updated to private"
+          }
+        },
+        "required": [
+          "id",
+          "visibility",
+          "message"
+        ]
+      },
+      "UpdateVisibilityRequest": {
+        "type": "object",
+        "properties": {
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "description": "Image visibility: 'public' (accessible via CDN) or 'private' (requires signed URL)",
+            "example": "public"
+          }
+        },
+        "required": [
+          "visibility"
+        ]
+      },
+      "UsageBreakdown": {
+        "type": "object",
+        "properties": {
+          "storage_bytes": {
+            "type": "integer",
+            "description": "Storage used in bytes",
+            "example": 104857600
+          },
+          "storage_units": {
+            "type": "integer",
+            "description": "Billable storage units",
+            "example": 1
+          },
+          "transformations": {
+            "type": "integer",
+            "description": "Number of image transformations",
+            "example": 1500
+          },
+          "transformation_units": {
+            "type": "integer",
+            "description": "Billable transformation units",
+            "example": 2
+          },
+          "api_requests": {
+            "type": "integer",
+            "description": "Number of API requests",
+            "example": 5000
+          },
+          "api_units": {
+            "type": "integer",
+            "description": "Billable API units",
+            "example": 1
+          },
+          "total_units": {
+            "type": "integer",
+            "description": "Total billable units",
+            "example": 4
+          },
+          "base_amount": {
+            "type": "integer",
+            "description": "Base amount in cents (e.g., 500 = $5.00)",
+            "example": 500
+          },
+          "overage_amount": {
+            "type": "integer",
+            "description": "Overage amount in cents",
+            "example": 200
+          }
+        },
+        "required": [
+          "storage_bytes",
+          "storage_units",
+          "transformations",
+          "transformation_units",
+          "api_requests",
+          "api_units",
+          "total_units",
+          "base_amount",
+          "overage_amount"
+        ]
+      },
+      "SubscriptionInvoice": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Invoice ID",
+            "example": "inv_123456"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Invoice creation timestamp",
+            "example": "2025-01-01T00:00:00Z"
+          },
+          "total": {
+            "type": "integer",
+            "description": "Total amount in cents",
+            "example": 500
+          },
+          "total_formatted": {
+            "type": "string",
+            "description": "Formatted total amount",
+            "example": "$5.00"
+          },
+          "status": {
+            "type": "string",
+            "description": "Invoice status",
+            "example": "paid"
+          },
+          "invoice_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to view/download invoice",
+            "example": "https://lemonsqueezy.com/invoices/inv_123456"
+          },
+          "usage_breakdown": {
+            "$ref": "#/components/schemas/UsageBreakdown"
+          }
+        },
+        "required": [
+          "id",
+          "created_at",
+          "total",
+          "total_formatted",
+          "status"
+        ]
+      },
+      "SubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "plan": {
+            "type": "string",
+            "description": "Plan ID",
+            "example": "pro"
+          },
+          "plan_name": {
+            "type": "string",
+            "description": "Human-readable plan name",
+            "example": "Pro Plan"
+          },
+          "status": {
+            "type": "string",
+            "description": "Subscription status (active, cancelled, past_due, etc.)",
+            "example": "active"
+          },
+          "renews_at": {
+            "type": "integer",
+            "description": "Next renewal timestamp (Unix epoch)",
+            "example": 1735689600
+          },
+          "ends_at": {
+            "type": "integer",
+            "description": "Subscription end timestamp (if cancelled)",
+            "example": 1735689600
+          },
+          "card_brand": {
+            "type": "string",
+            "description": "Payment card brand",
+            "example": "visa"
+          },
+          "card_last_four": {
+            "type": "string",
+            "description": "Last four digits of payment card",
+            "example": "4242"
+          },
+          "update_payment_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to update payment method",
+            "example": "https://lemonsqueezy.com/checkout/update/xxx"
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionInvoice"
+            },
+            "description": "Recent invoices"
+          }
+        },
+        "required": [
+          "plan",
+          "plan_name",
+          "status",
+          "invoices"
+        ]
+      },
+      "CancelSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Subscription cancelled. Access continues until billing period ends."
+          },
+          "plan_status": {
+            "type": "string",
+            "description": "New plan status",
+            "example": "cancelled"
+          },
+          "subscription_ends_at": {
+            "type": "integer",
+            "description": "When subscription access ends",
+            "example": 1735689600
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "plan_status"
+        ]
+      },
+      "ResumeSubscriptionResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Subscription resumed successfully."
+          },
+          "plan_status": {
+            "type": "string",
+            "description": "New plan status",
+            "example": "active"
+          },
+          "renews_at": {
+            "type": "integer",
+            "description": "Next renewal timestamp",
+            "example": 1735689600
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "plan_status"
+        ]
+      },
+      "WebhookResponse": {
+        "type": "object",
+        "properties": {
+          "received": {
+            "type": "boolean",
+            "description": "Whether the webhook was received successfully",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional message",
+            "example": "Webhook processed"
+          },
+          "duplicate": {
+            "type": "boolean",
+            "description": "Whether this was a duplicate webhook (idempotency)",
+            "example": false
+          }
+        },
+        "required": [
+          "received"
+        ]
+      },
+      "AdminPlanUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "User plan updated to pro"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Updated user ID",
+            "example": "user_abc123"
+          },
+          "plan": {
+            "type": "string",
+            "description": "New plan",
+            "example": "pro"
+          }
+        },
+        "required": [
+          "success",
+          "message",
+          "user_id",
+          "plan"
+        ]
+      },
+      "AdminPlanUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User ID to update",
+            "example": "user_abc123"
+          },
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "pro"
+            ],
+            "description": "New plan",
+            "example": "pro"
+          },
+          "subscription_id": {
+            "type": "string",
+            "description": "Subscription ID from payment provider",
+            "example": "sub_123456"
+          }
+        },
+        "required": [
+          "user_id",
+          "plan"
+        ]
+      },
+      "RegistrationOptionsResponse": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "description": "Base64URL-encoded challenge",
+            "example": "base64-encoded-challenge"
+          },
+          "rp": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "example": "img-src.io"
+              },
+              "name": {
+                "type": "string",
+                "example": "img-src"
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "example": "base64-user-id"
+              },
+              "name": {
+                "type": "string",
+                "example": "johndoe"
+              },
+              "displayName": {
+                "type": "string",
+                "example": "John Doe"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "displayName"
+            ]
+          },
+          "pubKeyCredParams": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "public-key"
+                  ]
+                },
+                "alg": {
+                  "type": "number",
+                  "description": "COSE algorithm ID",
+                  "example": -7
+                }
+              },
+              "required": [
+                "type",
+                "alg"
+              ]
+            }
+          },
+          "timeout": {
+            "type": "integer",
+            "example": 60000
+          },
+          "attestation": {
+            "type": "string",
+            "example": "none"
+          },
+          "authenticatorSelection": {
+            "type": "object",
+            "properties": {
+              "authenticatorAttachment": {
+                "type": "string"
+              },
+              "residentKey": {
+                "type": "string"
+              },
+              "userVerification": {
+                "type": "string"
+              }
+            }
+          },
+          "excludeCredentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "public-key"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "transports": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ]
+            }
+          }
+        },
+        "required": [
+          "challenge",
+          "rp",
+          "user",
+          "pubKeyCredParams",
+          "timeout",
+          "attestation"
+        ]
+      },
+      "PasskeyItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Passkey ID",
+            "example": "pk_123456"
+          },
+          "name": {
+            "type": "string",
+            "description": "User-defined name",
+            "example": "My MacBook"
+          },
+          "createdAt": {
+            "type": "integer",
+            "description": "Creation timestamp (Unix epoch)",
+            "example": 1704067200
+          },
+          "lastUsedAt": {
+            "type": "integer",
+            "description": "Last used timestamp",
+            "example": 1704153600
+          },
+          "deviceType": {
+            "type": "string",
+            "description": "Authenticator type (platform, cross-platform)",
+            "example": "platform"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "createdAt"
+        ],
+        "description": "The registered passkey (if verified)"
+      },
+      "RegistrationVerifyResponse": {
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "description": "Whether registration was verified",
+            "example": true
+          },
+          "passkey_id": {
+            "type": "string",
+            "description": "Passkey ID (if verified)",
+            "example": "pk_123456"
+          },
+          "passkey": {
+            "$ref": "#/components/schemas/PasskeyItem"
+          }
+        },
+        "required": [
+          "verified"
+        ]
+      },
+      "RegistrationVerifyRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Credential ID"
+          },
+          "rawId": {
+            "type": "string",
+            "description": "Base64URL-encoded raw credential ID"
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "clientDataJSON": {
+                "type": "string"
+              },
+              "attestationObject": {
+                "type": "string"
+              },
+              "transports": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "clientDataJSON",
+              "attestationObject"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "public-key"
+            ]
+          },
+          "clientExtensionResults": {
+            "type": "object",
+            "properties": {}
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional name for the passkey",
+            "example": "My Passkey"
+          }
+        },
+        "required": [
+          "id",
+          "rawId",
+          "response",
+          "type"
+        ]
+      },
+      "AuthenticationOptionsResponse": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "description": "Base64URL-encoded challenge",
+            "example": "base64-encoded-challenge"
+          },
+          "timeout": {
+            "type": "integer",
+            "example": 60000
+          },
+          "rpId": {
+            "type": "string",
+            "example": "img-src.io"
+          },
+          "allowCredentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "public-key"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "transports": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ]
+            }
+          },
+          "userVerification": {
+            "type": "string",
+            "example": "preferred"
+          }
+        },
+        "required": [
+          "challenge",
+          "timeout",
+          "rpId"
+        ]
+      },
+      "AuthenticationVerifyResponse": {
+        "type": "object",
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "description": "Whether authentication was verified",
+            "example": true
+          },
+          "ticket": {
+            "type": "string",
+            "description": "Clerk sign-in token for session creation (if verified)",
+            "example": "clerk-sign-in-token"
+          },
+          "userId": {
+            "type": "string",
+            "description": "User ID (if verified)",
+            "example": "user_abc123"
+          },
+          "username": {
+            "type": "string",
+            "description": "Username (if verified)",
+            "example": "johndoe"
+          }
+        },
+        "required": [
+          "verified"
+        ]
+      },
+      "AuthenticationVerifyRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Credential ID"
+          },
+          "rawId": {
+            "type": "string",
+            "description": "Base64URL-encoded raw credential ID"
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "clientDataJSON": {
+                "type": "string"
+              },
+              "authenticatorData": {
+                "type": "string"
+              },
+              "signature": {
+                "type": "string"
+              },
+              "userHandle": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "clientDataJSON",
+              "authenticatorData",
+              "signature"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "public-key"
+            ]
+          },
+          "clientExtensionResults": {
+            "type": "object",
+            "properties": {}
+          }
+        },
+        "required": [
+          "id",
+          "rawId",
+          "response",
+          "type"
+        ]
+      },
+      "ListPasskeysResponse": {
+        "type": "object",
+        "properties": {
+          "passkeys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PasskeyItem"
+            }
+          }
+        },
+        "required": [
+          "passkeys"
+        ]
+      },
+      "DeletePasskeyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable message",
+            "example": "Passkey deleted"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ]
+      },
+      "RenamePasskeyResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Operation success flag",
+            "example": true
+          },
+          "passkey": {
+            "$ref": "#/components/schemas/PasskeyItem"
+          }
+        },
+        "required": [
+          "success",
+          "passkey"
+        ]
+      },
+      "RenamePasskeyRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "New name for the passkey",
+            "example": "Work Laptop"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TransformResponse": {
+        "type": "object",
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "description": "Whether the transform is allowed",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "description": "Status message",
+            "example": "Transform recorded"
+          },
+          "current": {
+            "type": "integer",
+            "description": "Current transform count for this period",
+            "example": 150
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Transform limit for this period",
+            "example": 1000
+          },
+          "remaining_credit": {
+            "type": "integer",
+            "description": "Remaining credit transforms after this request",
+            "example": 500
+          }
+        },
+        "required": [
+          "allowed",
+          "message"
+        ]
+      },
+      "RecordTransformRequest": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Username of the image owner",
+            "example": "john"
+          }
+        },
+        "required": [
+          "username"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health check endpoint",
+        "description": "Returns the current status of the API service",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Get user settings",
+        "description": "Returns the authenticated user's settings",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Update user settings",
+        "description": "Updates the authenticated user's settings",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated user settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/presets": {
+      "get": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "List presets",
+        "description": "Returns all transformation presets for the authenticated user. Requires Pro plan.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of presets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPresetsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Create preset",
+        "description": "Creates a new transformation preset. Requires Pro plan.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePresetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Preset created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preset"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required or limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Preset name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/presets/:id": {
+      "get": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Get preset",
+        "description": "Returns a specific preset by ID. Requires Pro plan.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Preset ID",
+              "example": "preset_abc123"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preset details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preset"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Preset not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Update preset",
+        "description": "Updates an existing preset. Requires Pro plan.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Preset ID",
+              "example": "preset_abc123"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePresetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preset updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Preset"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Preset not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Preset name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/settings/presets/:name": {
+      "delete": {
+        "tags": [
+          "Presets"
+        ],
+        "summary": "Delete preset",
+        "description": "Deletes a preset. Requires Pro plan.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Preset name",
+              "example": "thumbnail"
+            },
+            "required": true,
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Preset deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePresetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Preset not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "tags": [
+          "Usage"
+        ],
+        "summary": "Get usage statistics",
+        "description": "Returns usage statistics for the authenticated user",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage statistics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/images": {
+      "post": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Upload image",
+        "description": "Upload a new image. Supports multipart/form-data with 'file' field.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "description": "Image file to upload",
+                    "format": "binary"
+                  },
+                  "target_path": {
+                    "type": "string",
+                    "description": "Target path for organizing the image",
+                    "example": "blog/2024"
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "description": "Image visibility (Pro only, default: public)",
+                    "example": "public"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request (missing file, invalid format, size exceeded)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required for private images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Duplicate image (same content already exists)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Upload limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "List images",
+        "description": "List user's images with pagination and optional path filtering",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "nullable": true,
+              "minimum": 0,
+              "default": 0
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "path",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/images/search": {
+      "get": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Search images",
+        "description": "Search images by filename",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid search query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/images/:id": {
+      "get": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Get image metadata",
+        "description": "Get metadata for a specific image",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 16
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetadataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Image not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Delete image",
+        "description": "Delete an image and all its paths",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 16
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Image not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/images/:id/signed-url": {
+      "post": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Create signed URL",
+        "description": "Create a time-limited signed URL for an image (Pro plan only)",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 16
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSignedUrlRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Signed URL created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignedUrlResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Image not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/images/path/:username/{filepath}": {
+      "delete": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Delete image path",
+        "description": "Delete a specific path from an image. If this is the last path, the image is deleted.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "filepath",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Path deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PathDeleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - username mismatch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Path not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/images/:id/visibility": {
+      "patch": {
+        "tags": [
+          "Images"
+        ],
+        "summary": "Update image visibility",
+        "description": "Update the visibility of an image (Pro plan only). Private images require signed URLs for access.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 16
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVisibilityRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Visibility updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateVisibilityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Pro plan required for private images",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Image not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscription": {
+      "get": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Get subscription details",
+        "description": "Get the authenticated user's subscription details including invoices",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubscriptionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscription/cancel": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Cancel subscription",
+        "description": "Cancel the user's subscription. Access continues until billing period ends.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No active subscription to cancel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/subscription/resume": {
+      "post": {
+        "tags": [
+          "Subscription"
+        ],
+        "summary": "Resume subscription",
+        "description": "Resume a cancelled subscription before it ends",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription resumed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeSubscriptionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No cancelled subscription to resume",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/stripe": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Handle Stripe webhook",
+        "description": "Receives and processes Stripe payment events",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "nullable": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook received",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/webhooks/lemonsqueezy": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Handle LemonSqueezy webhook",
+        "description": "Receives and processes LemonSqueezy payment events",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "nullable": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook received",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid webhook",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/plan": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Update user plan (admin)",
+        "description": "Admin endpoint to manually update a user's plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPlanUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Plan updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPlanUpdateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passkeys/register/options": {
+      "post": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Generate registration options",
+        "description": "Generate WebAuthn registration options for a new passkey",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registration options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationOptionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passkeys/register/verify": {
+      "post": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Verify registration",
+        "description": "Verify WebAuthn registration attestation and store passkey",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registration verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationVerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Verification failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passkeys/authenticate/options": {
+      "post": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Generate authentication options",
+        "description": "Generate WebAuthn authentication options",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "description": "Username to authenticate (optional for discoverable credentials)",
+                    "example": "johndoe"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationOptionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No passkeys found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passkeys/authenticate/verify": {
+      "post": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Verify authentication",
+        "description": "Verify WebAuthn authentication assertion and return session token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticationVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication verified",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthenticationVerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Verification failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Signature verification failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passkeys": {
+      "get": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "List passkeys",
+        "description": "List the authenticated user's passkeys",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of passkeys",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListPasskeysResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passkeys/:id": {
+      "delete": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Delete passkey",
+        "description": "Delete a passkey",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Passkey deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePasskeyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Passkey not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Passkeys"
+        ],
+        "summary": "Rename passkey",
+        "description": "Rename a passkey",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePasskeyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Passkey renamed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenamePasskeyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Passkey not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/record-transform": {
+      "post": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Record transform request",
+        "description": "Called by Transcoder via Service Binding after successful transformation. No auth required (network-isolated).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordTransformRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Transform allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransformResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Transform limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransformResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/check-transform/:username": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Check if transform is allowed",
+        "description": "Pre-flight check if user can perform a transform (without recording). Called by Transcoder via Service Binding.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Username to check",
+              "example": "john"
+            },
+            "required": true,
+            "name": "username",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transform allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransformResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Transform limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransformResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/internal/resolve-path/:username/{filepath}": {
+      "get": {
+        "tags": [
+          "Internal"
+        ],
+        "summary": "Resolve image path to ID",
+        "description": "Look up imageId from D1 by username and filepath. Called by Transcoder via Service Binding when KV path mapping doesn't exist.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "username",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "filepath",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image ID found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "found": {
+                      "type": "boolean"
+                    },
+                    "image_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "found"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Image not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "found": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "found"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

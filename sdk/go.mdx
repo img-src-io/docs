@@ -1,0 +1,384 @@
+---
+title: Go SDK
+description: "Official Go SDK for img-src"
+---
+
+# Go SDK
+
+The official Go SDK for img-src provides idiomatic Go access to the API.
+
+<Info>
+  **Package:** `github.com/img-src-io/sdk-go` | **Runtime:** Go 1.21+ | [pkg.go.dev](https://pkg.go.dev/github.com/img-src-io/sdk-go) | [GitHub](https://github.com/img-src-io/sdk-go)
+</Info>
+
+## Installation
+
+```bash
+go get github.com/img-src-io/sdk-go
+```
+
+## Quick Start
+
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "os"
+
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+func main() {
+    client := imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+    // Upload an image
+    file, _ := os.Open("photo.jpg")
+    defer file.Close()
+
+    image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
+        File: file,
+        Path: "photos/vacation.jpg",
+    })
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(image.URL)
+    // https://img-src.io/i/username/photos/vacation.jpg
+}
+```
+
+## Configuration
+
+```go
+client := imgsrc.NewClient(
+    os.Getenv("IMGSRC_API_KEY"),
+    imgsrc.WithBaseURL("https://api.img-src.io"),
+    imgsrc.WithTimeout(30*time.Second),
+    imgsrc.WithRetries(3),
+)
+```
+
+## Images
+
+### Upload
+
+```go
+// From file
+file, _ := os.Open("photo.jpg")
+defer file.Close()
+
+image, err := client.Images.Upload(ctx, &imgsrc.UploadParams{
+    File: file,
+    Path: "photos/vacation.jpg",
+})
+
+// From bytes
+data, _ := os.ReadFile("photo.jpg")
+image, err := client.Images.Upload(ctx, &imgsrc.UploadParams{
+    Data:        data,
+    Path:        "photos/vacation.jpg",
+    ContentType: "image/jpeg",
+})
+
+// From URL
+image, err := client.Images.Upload(ctx, &imgsrc.UploadParams{
+    URL:  "https://example.com/photo.jpg",
+    Path: "photos/external.jpg",
+})
+```
+
+### List
+
+```go
+// List all images
+result, err := client.Images.List(ctx, nil)
+for _, image := range result.Images {
+    fmt.Println(image.URL)
+}
+
+// With pagination
+result, err := client.Images.List(ctx, &imgsrc.ListParams{
+    Limit:  20,
+    Offset: 40,
+})
+
+// Filter by prefix
+result, err := client.Images.List(ctx, &imgsrc.ListParams{
+    Prefix: "photos/",
+})
+```
+
+### Search
+
+```go
+result, err := client.Images.Search(ctx, &imgsrc.SearchParams{
+    Query: "vacation",
+    Limit: 10,
+})
+```
+
+### Get
+
+```go
+image, err := client.Images.Get(ctx, "img_abc123")
+fmt.Printf("Dimensions: %dx%d\n", image.Width, image.Height)
+```
+
+### Delete
+
+```go
+err := client.Images.Delete(ctx, "img_abc123")
+```
+
+### Create Signed URL (Pro)
+
+```go
+result, err := client.Images.CreateSignedURL(ctx, "img_abc123", &imgsrc.SignedURLParams{
+    ExpiresIn: 3600, // 1 hour
+    Transform: &imgsrc.Transform{
+        Width:  800,
+        Height: 600,
+        Fit:    "cover",
+    },
+})
+fmt.Println(result.SignedURL)
+```
+
+## URL Builder
+
+Build transformation URLs without API calls:
+
+```go
+// Simple resize
+url := client.URL("username/photo.jpg").
+    Width(800).
+    Build()
+// https://img-src.io/i/username/photo.jpg?w=800
+
+// Full transformation (output format determined by file extension)
+url := client.URL("username/photo.webp").
+    Width(800).
+    Height(600).
+    Fit("cover").
+    Quality(85).
+    Build()
+// https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
+
+// Using a preset (Pro)
+url := client.URL("username/photo.jpg").
+    Preset("thumbnail").
+    Build()
+// https://img-src.io/i/username/photo.jpg?p:thumbnail
+```
+
+## Settings
+
+```go
+// Get settings
+settings, err := client.Settings.Get(ctx)
+fmt.Println(settings.DefaultQuality)
+
+// Update settings
+_, err = client.Settings.Update(ctx, &imgsrc.UpdateSettingsParams{
+    DefaultQuality: imgsrc.Int(85),
+    DefaultFitMode: imgsrc.String("cover"),
+})
+```
+
+## API Keys
+
+```go
+// List keys
+result, err := client.APIKeys.List(ctx)
+for _, key := range result.APIKeys {
+    fmt.Printf("%s: %s...\n", key.Name, key.KeyPrefix)
+}
+
+// Create key
+newKey, err := client.APIKeys.Create(ctx, &imgsrc.CreateAPIKeyParams{
+    Name:          "Production",
+    Scopes:        []string{"read", "write"},
+    ExpiresInDays: imgsrc.Int(90),
+})
+fmt.Printf("Save this key: %s\n", newKey.Key)
+
+// Delete key
+err = client.APIKeys.Delete(ctx, "key_id")
+```
+
+## Presets (Pro)
+
+```go
+// List presets
+result, err := client.Presets.List(ctx)
+
+// Create preset
+preset, err := client.Presets.Create(ctx, &imgsrc.CreatePresetParams{
+    Name: "thumbnail",
+    Params: map[string]interface{}{
+        "w":   200,
+        "h":   200,
+        "fit": "cover",
+    },
+})
+
+// Update preset
+_, err = client.Presets.Update(ctx, "preset_id", &imgsrc.UpdatePresetParams{
+    Params: map[string]interface{}{
+        "w":   250,
+        "h":   250,
+        "fit": "cover",
+    },
+})
+
+// Delete preset
+err = client.Presets.Delete(ctx, "thumbnail")
+```
+
+## Usage
+
+```go
+usage, err := client.Usage.Get(ctx)
+
+fmt.Printf("Transformations: %d/%d\n",
+    usage.Transformations.Used,
+    usage.Transformations.Limit)
+fmt.Printf("Storage: %d bytes\n", usage.Storage.UsedBytes)
+fmt.Printf("Plan: %s\n", usage.Plan)
+```
+
+## Error Handling
+
+```go
+import (
+    imgsrc "github.com/img-src-io/sdk-go"
+    "errors"
+)
+
+image, err := client.Images.Get(ctx, "nonexistent")
+if err != nil {
+    var notFound *imgsrc.NotFoundError
+    var rateLimit *imgsrc.RateLimitError
+    var apiErr *imgsrc.APIError
+
+    switch {
+    case errors.As(err, &notFound):
+        fmt.Println("Image not found")
+    case errors.As(err, &rateLimit):
+        fmt.Printf("Rate limited. Retry after %ds\n", rateLimit.RetryAfter)
+    case errors.As(err, &apiErr):
+        fmt.Printf("API error: %s - %s\n", apiErr.Code, apiErr.Message)
+    default:
+        fmt.Printf("Unknown error: %v\n", err)
+    }
+}
+```
+
+## Context and Cancellation
+
+All methods accept a context for cancellation and timeouts:
+
+```go
+// With timeout
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+
+image, err := client.Images.Get(ctx, "img_abc123")
+```
+
+## Concurrent Uploads
+
+```go
+func uploadImages(client *imgsrc.Client, paths []string) error {
+    var wg sync.WaitGroup
+    errCh := make(chan error, len(paths))
+
+    for _, path := range paths {
+        wg.Add(1)
+        go func(p string) {
+            defer wg.Done()
+
+            file, err := os.Open(p)
+            if err != nil {
+                errCh <- err
+                return
+            }
+            defer file.Close()
+
+            _, err = client.Images.Upload(context.Background(), &imgsrc.UploadParams{
+                File: file,
+                Path: filepath.Base(p),
+            })
+            if err != nil {
+                errCh <- err
+            }
+        }(path)
+    }
+
+    wg.Wait()
+    close(errCh)
+
+    for err := range errCh {
+        if err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+## HTTP Handler Example
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "net/http"
+    "os"
+
+    imgsrc "github.com/img-src-io/sdk-go"
+)
+
+var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    file, header, err := r.FormFile("file")
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
+    }
+    defer file.Close()
+
+    image, err := client.Images.Upload(r.Context(), &imgsrc.UploadParams{
+        File: file,
+        Path: "uploads/" + header.Filename,
+    })
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(image)
+}
+
+func main() {
+    http.HandleFunc("/upload", uploadHandler)
+    http.ListenAndServe(":8080", nil)
+}
+```
+
+## Related
+
+- [API Reference](/api-reference/overview) - Full API documentation
+- [Image Transformation Guide](/guides/image-transformation) - Transformation parameters
+- [Go Integration Examples](/examples/go) - More Go examples with popular frameworks

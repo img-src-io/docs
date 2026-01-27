@@ -1,0 +1,543 @@
+---
+title: Presets (Pro)
+description: "Save and reuse transformation configurations (Pro)"
+---
+
+# Presets (Pro)
+
+<Note>
+  Presets are a Pro feature. [Upgrade to Pro](https://img-src.io/pricing) to use them.
+</Note>
+
+Presets let you save transformation configurations and apply them with a simple URL parameter. Instead of long URLs with multiple parameters, use `?p:thumbnail` or `?p:hero`.
+
+## Why Use Presets?
+
+- **Consistency**: Same transformations across your application
+- **Simplicity**: Short, readable URLs
+- **Maintainability**: Update transformations in one place
+- **Performance**: Preset lookup is cached at the edge
+
+## Available Parameters
+
+Presets support all image transformation parameters. Here's the complete reference:
+
+### Size & Layout
+
+| Parameter | Type | Description | Values | Default |
+|-----------|------|-------------|--------|---------|
+| `w` | integer | Width in pixels | 1-10000 | Auto |
+| `h` | integer | Height in pixels | 1-10000 | Auto |
+| `fit` | string | How the image fits within dimensions | See below | `cover` |
+| `aspect` | string | Aspect ratio constraint | See below | `original` |
+
+**Fit mode values:**
+
+| Value | Description |
+|-------|-------------|
+| `cover` | Fill the dimensions, cropping excess (default) |
+| `contain` | Fit within dimensions, preserving aspect ratio (may have letterboxing) |
+| `fill` | Stretch to fill dimensions exactly (may distort) |
+| `scale-down` | Like `contain`, but never upscale smaller images |
+
+**Aspect ratio values:**
+
+| Value | Description |
+|-------|-------------|
+| `original` | Keep original aspect ratio (default) |
+| `1:1` | Square |
+| `4:3` | Standard photo |
+| `16:9` | Widescreen |
+| `3:2` | Classic 35mm |
+| `21:9` | Ultra-wide |
+
+### Quality & Display
+
+| Parameter | Type | Description | Values | Default |
+|-----------|------|-------------|--------|---------|
+| `q` | integer | Compression quality | 1-100 | 80 |
+| `dpr` | number | Device pixel ratio (Retina) | 1, 1.5, 2, 3 | 1 |
+| `crop` | string | Crop position when using `fit=cover` | See below | `center` |
+| `grayscale` | boolean | Convert to grayscale | `true`, `false` | `false` |
+
+**Crop position values:**
+
+| Value | Description |
+|-------|-------------|
+| `center` | Center of the image (default) |
+| `top` | Top edge |
+| `bottom` | Bottom edge |
+| `left` | Left edge |
+| `right` | Right edge |
+| `top-left` | Top-left corner |
+| `top-right` | Top-right corner |
+| `bottom-left` | Bottom-left corner |
+| `bottom-right` | Bottom-right corner |
+| `attention` | Auto-detect important area (faces, objects) |
+| `entropy` | Area with highest visual complexity |
+
+### Effects & Transform
+
+| Parameter | Type | Description | Values | Default |
+|-----------|------|-------------|--------|---------|
+| `blur` | number | Gaussian blur radius | 0-100 | 0 (none) |
+| `sharpen` | number | Sharpen intensity | 0-100 | 0 (none) |
+| `rotate` | integer | Rotation angle | 0, 90, 180, 270, `auto` | 0 (none) |
+| `flip` | string | Flip/mirror the image | `h`, `v`, `both` | none |
+
+**Rotate values:**
+
+| Value | Description |
+|-------|-------------|
+| `0` | No rotation (default) |
+| `90` | Rotate 90° clockwise |
+| `180` | Rotate 180° |
+| `270` | Rotate 270° clockwise (90° counter-clockwise) |
+| `auto` | Auto-rotate based on EXIF orientation |
+
+**Flip values:**
+
+| Value | Description |
+|-------|-------------|
+| `h` | Flip horizontally (mirror) |
+| `v` | Flip vertically |
+| `both` | Flip both horizontally and vertically |
+
+### Example: All Parameters
+
+```json
+{
+  "name": "full-example",
+  "description": "Example with all parameters",
+  "params": {
+    "w": 800,
+    "h": 600,
+    "fit": "cover",
+    "aspect": "16:9",
+    "q": 85,
+    "dpr": 2,
+    "crop": "attention",
+    "grayscale": false,
+    "blur": 0,
+    "sharpen": 10,
+    "rotate": "auto",
+    "flip": null
+  }
+}
+```
+
+### Common Preset Configurations
+
+<AccordionGroup>
+  <Accordion title="Retina-ready thumbnail">
+    ```json
+    {
+      "name": "thumbnail-2x",
+      "params": {
+        "w": 200,
+        "h": 200,
+        "fit": "cover",
+        "crop": "attention",
+        "dpr": 2,
+        "q": 80
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Grayscale portrait">
+    ```json
+    {
+      "name": "portrait-bw",
+      "params": {
+        "w": 400,
+        "h": 500,
+        "fit": "cover",
+        "crop": "attention",
+        "grayscale": true,
+        "sharpen": 15
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Blurred background">
+    ```json
+    {
+      "name": "blurred-bg",
+      "params": {
+        "w": 1920,
+        "h": 1080,
+        "fit": "cover",
+        "blur": 20,
+        "q": 60
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Social media (16:9)">
+    ```json
+    {
+      "name": "social-wide",
+      "params": {
+        "w": 1200,
+        "aspect": "16:9",
+        "fit": "cover",
+        "crop": "attention",
+        "q": 85
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+  You don't need to specify all parameters. Omitted parameters use default values or are auto-calculated (e.g., height is auto-calculated if only width is provided).
+</Tip>
+
+## Creating a Preset
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.img-src.io/api/v1/settings/presets \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "thumbnail",
+    "description": "200x200 square thumbnail",
+    "params": {
+      "w": 200,
+      "h": 200,
+      "fit": "cover",
+      "q": 80
+    }
+  }'
+```
+
+```typescript TypeScript
+const preset = await client.presets.create({
+  name: 'thumbnail',
+  description: '200x200 square thumbnail',
+  params: {
+    w: 200,
+    h: 200,
+    fit: 'cover',
+    q: 80
+  }
+});
+```
+
+```python Python
+preset = client.presets.create(
+    name="thumbnail",
+    description="200x200 square thumbnail",
+    params={
+        "w": 200,
+        "h": 200,
+        "fit": "cover",
+        "q": 80
+    }
+)
+```
+
+```go Go
+preset, err := client.Presets.Create(ctx, &imgsrc.CreatePresetParams{
+    Name:        "thumbnail",
+    Description: "200x200 square thumbnail",
+    Params: map[string]interface{}{
+        "w": 200, "h": 200, "fit": "cover", "q": 80,
+    },
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+```rust Rust
+let preset = client
+    .presets()
+    .create("thumbnail")
+    .description("200x200 square thumbnail")
+    .params(json!({"w": 200, "h": 200, "fit": "cover", "q": 80}))
+    .send()
+    .await?;
+```
+
+</CodeGroup>
+
+## Using a Preset
+
+Apply a preset with the `p:` parameter. The syntax is `p:preset_name` (note the colon):
+
+```html
+<!-- Before: verbose URL -->
+<img src="https://img-src.io/i/john/photo.jpg?w=200&h=200&fit=cover&q=80" />
+
+<!-- After: clean preset URL -->
+<img src="https://img-src.io/i/john/photo.jpg?p:thumbnail" />
+```
+
+<Note>
+  The preset parameter uses `p:name` syntax (with a colon), not `p=name`. This is to clearly distinguish presets from other parameters.
+</Note>
+
+## Common Preset Examples
+
+### Thumbnail
+
+```json
+{
+  "name": "thumbnail",
+  "params": {
+    "w": 200,
+    "h": 200,
+    "fit": "cover",
+    "q": 75
+  }
+}
+```
+
+### Hero Image
+
+```json
+{
+  "name": "hero",
+  "params": {
+    "w": 1920,
+    "h": 1080,
+    "fit": "cover",
+    "q": 90
+  }
+}
+```
+
+### Product Image
+
+```json
+{
+  "name": "product",
+  "params": {
+    "w": 800,
+    "h": 800,
+    "fit": "contain",
+    "q": 85
+  }
+}
+```
+
+### Avatar
+
+```json
+{
+  "name": "avatar",
+  "params": {
+    "w": 100,
+    "h": 100,
+    "fit": "cover",
+    "q": 80
+  }
+}
+```
+
+### OG Image (Social Media)
+
+```json
+{
+  "name": "og",
+  "params": {
+    "w": 1200,
+    "h": 630,
+    "fit": "cover",
+    "q": 85
+  }
+}
+```
+
+## Overriding Preset Parameters
+
+You can override specific parameters:
+
+```html
+<!-- Use thumbnail preset but higher quality -->
+<img src="https://img-src.io/i/john/photo.jpg?p:thumbnail&q=95" />
+
+<!-- Use hero preset but different size -->
+<img src="https://img-src.io/i/john/photo.jpg?p:hero&w=1280&h=720" />
+```
+
+## Listing Presets
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.img-src.io/api/v1/settings/presets \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+```typescript TypeScript
+const presets = await client.presets.list();
+console.log(presets);
+```
+
+```python Python
+presets = client.presets.list()
+print(presets)
+```
+
+```go Go
+result, err := client.Presets.List(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+fmt.Println(result.Presets)
+```
+
+```rust Rust
+let result = client.presets().list().await?;
+println!("{:?}", result.presets);
+```
+
+</CodeGroup>
+
+## Updating a Preset
+
+<Warning>
+  Updating a preset affects all future requests. Cached images using the old parameters will continue to be served until cache expires or is purged.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl -X PUT https://api.img-src.io/api/v1/settings/presets/preset_abc123 \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "params": {
+      "w": 250,
+      "h": 250,
+      "fit": "cover",
+      "q": 80
+    }
+  }'
+```
+
+```typescript TypeScript
+await client.presets.update('preset_abc123', {
+  params: {
+    w: 250,
+    h: 250,
+    fit: 'cover',
+    q: 80
+  }
+});
+```
+
+```python Python
+client.presets.update(
+    "preset_abc123",
+    params={"w": 250, "h": 250, "fit": "cover", "q": 80}
+)
+```
+
+```go Go
+_, err := client.Presets.Update(ctx, "preset_abc123", &imgsrc.UpdatePresetParams{
+    Params: map[string]interface{}{"w": 250, "h": 250, "fit": "cover", "q": 80},
+})
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+```rust Rust
+client.presets().update("preset_abc123")
+    .params(json!({"w": 250, "h": 250, "fit": "cover", "q": 80}))
+    .send()
+    .await?;
+```
+
+</CodeGroup>
+
+## Deleting a Preset
+
+<Warning>
+  After deletion, URLs using this preset will return a 400 error. Update your code first.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl -X DELETE https://api.img-src.io/api/v1/settings/presets/thumbnail \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+```typescript TypeScript
+await client.presets.delete('thumbnail');
+```
+
+```python Python
+client.presets.delete("thumbnail")
+```
+
+```go Go
+err := client.Presets.Delete(ctx, "thumbnail")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+```rust Rust
+client.presets().delete("thumbnail").await?;
+```
+
+</CodeGroup>
+
+## Preset Naming Rules
+
+- Alphanumeric characters, hyphens, and underscores
+- 1-50 characters
+- Case-sensitive
+- Must be unique per user
+
+Valid names:
+- `thumbnail`
+- `hero-image`
+- `product_large`
+- `og_1200x630`
+
+Invalid names:
+- `my preset` (spaces)
+- `@avatar` (special characters)
+- `` (empty)
+
+## Limits
+
+| Plan | Max Presets |
+|------|-------------|
+| Pro | 50 |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use descriptive names">
+    Name presets by their purpose, not their parameters:
+    - Good: `hero`, `thumbnail`, `product-card`
+    - Bad: `200x200`, `small`, `img1`
+  </Accordion>
+
+  <Accordion title="Document your presets">
+    Use the `description` field to explain when to use each preset.
+  </Accordion>
+
+  <Accordion title="Start with common sizes">
+    Create presets for your most frequently used transformations first.
+  </Accordion>
+
+  <Accordion title="Test before deploying">
+    Verify preset output before using in production:
+    ```bash
+    curl -I "https://img-src.io/i/username/test.jpg?p:my-preset"
+    ```
+  </Accordion>
+</AccordionGroup>

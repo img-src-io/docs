@@ -1,0 +1,21 @@
+---
+title: Delete Image
+api: DELETE /api/v1/images/{id}
+description: Delete an image by ID
+---
+
+<RequestExample>
+```bash cURL
+curl -X DELETE https://api.img-src.io/api/v1/images/img_abc123 \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 200 OK
+{
+  "success": true,
+  "message": "Image deleted"
+}
+```
+</ResponseExample>

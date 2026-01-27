@@ -1,0 +1,30 @@
+---
+title: Upload Image
+api: POST /api/v1/images
+description: Upload a new image
+---
+
+<RequestExample>
+```bash cURL
+curl -X POST https://api.img-src.io/api/v1/images \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY" \
+  -F "file=@photo.jpg" \
+  -F "path=photos/vacation.jpg"
+```
+</RequestExample>
+
+<ResponseExample>
+```json 201 Created
+{
+  "id": "img_abc123",
+  "url": "https://img-src.io/i/username/photos/vacation.jpg",
+  "paths": ["photos/vacation.jpg"],
+  "content_type": "image/jpeg",
+  "size": 1234567,
+  "width": 4000,
+  "height": 3000,
+  "sha256": "abc123...",
+  "created_at": 1704067200
+}
+```
+</ResponseExample>

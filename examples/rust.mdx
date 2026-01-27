@@ -1,0 +1,474 @@
+---
+title: Rust Integration
+description: "Using img-src with Rust applications"
+---
+
+# Rust Integration
+
+This guide shows how to integrate img-src into your Rust applications.
+
+## Basic Usage
+
+Use the SDK for type-safe API access:
+
+```rust
+use imgsrc::Client;
+use std::path::Path;
+
+#[tokio::main]
+async fn main() -> Result<(), imgsrc::Error> {
+    let client = Client::from_env()?;
+
+    // Upload an image
+    let image = client
+        .images()
+        .upload(Path::new("photo.jpg"))
+        .path("photos/vacation.jpg")
+        .send()
+        .await?;
+
+    println!("Uploaded: {}", image.url);
+    Ok(())
+}
+```
+
+## URL Builder Helper
+
+Create a helper for building transformation URLs:
+
+```rust
+use std::collections::HashMap;
+
+pub struct TransformOptions {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub fit: Option<String>,
+    pub quality: Option<u8>,
+    pub preset: Option<String>,
+}
+
+impl Default for TransformOptions {
+    fn default() -> Self {
+        Self {
+            width: None,
+            height: None,
+            fit: None,
+            quality: None,
+            preset: None,
+        }
+    }
+}
+
+pub fn build_url(username: &str, path: &str, opts: Option<&TransformOptions>) -> String {
+    let base = format!("https://img-src.io/i/{}/{}", username, path);
+
+    let opts = match opts {
+        Some(o) => o,
+        None => return base,
+    };
+
+    // Presets use p:name syntax in the URL
+    if let Some(preset) = &opts.preset {
+        return format!("{}?p:{}", base, preset);
+    }
+
+    let mut params = Vec::new();
+    if let Some(w) = opts.width {
+        params.push(format!("w={}", w));
+    }
+    if let Some(h) = opts.height {
+        params.push(format!("h={}", h));
+    }
+    if let Some(fit) = &opts.fit {
+        params.push(format!("fit={}", fit));
+    }
+    if let Some(q) = opts.quality {
+        params.push(format!("q={}", q));
+    }
+    // Note: Output format is determined by file extension in the path, not a query parameter
+
+    if params.is_empty() {
+        base
+    } else {
+        format!("{}?{}", base, params.join("&"))
+    }
+}
+
+// Usage
+fn main() {
+    let url = build_url("john", "photo.jpg", Some(&TransformOptions {
+        width: Some(800),
+        height: Some(600),
+        fit: Some("cover".into()),
+        quality: Some(85),
+        ..Default::default()
+    }));
+    // https://img-src.io/i/john/photo.jpg?w=800&h=600&fit=cover&q=85
+}
+```
+
+## Axum Web Framework
+
+```rust
+use axum::{
+    extract::{Multipart, State},
+    response::Json,
+    routing::{get, post},
+    Router,
+};
+use imgsrc::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::sync::Arc;
+
+struct AppState {
+    imgsrc: Client,
+}
+
+#[derive(Serialize)]
+struct ImageResponse {
+    url: String,
+}
+
+async fn upload(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Json<Value> {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        let name = field.name().unwrap_or("").to_string();
+        if name != "file" {
+            continue;
+        }
+
+        let filename = field.file_name().unwrap_or("upload").to_string();
+        let data = field.bytes().await.unwrap();
+
+        match state
+            .imgsrc
+            .images()
+            .upload_bytes(&data)
+            .path(&format!("uploads/{}", filename))
+            .send()
+            .await
+        {
+            Ok(image) => return Json(json!({ "url": image.url })),
+            Err(e) => return Json(json!({ "error": e.to_string() })),
+        }
+    }
+
+    Json(json!({ "error": "No file provided" }))
+}
+
+async fn list_images(State(state): State<Arc<AppState>>) -> Json<Value> {
+    match state.imgsrc.images().list().limit(20).send().await {
+        Ok(result) => Json(json!({
+            "images": result.images,
+            "total": result.total
+        })),
+        Err(e) => Json(json!({ "error": e.to_string() })),
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let state = Arc::new(AppState {
+        imgsrc: Client::from_env().expect("IMGSRC_API_KEY not set"),
+    });
+
+    let app = Router::new()
+        .route("/upload", post(upload))
+        .route("/images", get(list_images))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    println!("Listening on http://0.0.0.0:3000");
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+## Actix-web Framework
+
+```rust
+use actix_multipart::Multipart;
+use actix_web::{web, App, HttpResponse, HttpServer};
+use futures_util::StreamExt;
+use imgsrc::Client;
+
+async fn upload(
+    client: web::Data<Client>,
+    mut payload: Multipart,
+) -> HttpResponse {
+    let mut data = Vec::new();
+    let mut filename = String::from("upload");
+
+    while let Some(Ok(mut field)) = payload.next().await {
+        if let Some(name) = field.content_disposition().get_filename() {
+            filename = name.to_string();
+        }
+
+        while let Some(Ok(chunk)) = field.next().await {
+            data.extend_from_slice(&chunk);
+        }
+    }
+
+    if data.is_empty() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": "No file provided"
+        }));
+    }
+
+    match client
+        .images()
+        .upload_bytes(&data)
+        .path(&format!("uploads/{}", filename))
+        .send()
+        .await
+    {
+        Ok(image) => HttpResponse::Ok().json(serde_json::json!({
+            "url": image.url
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+async fn list_images(client: web::Data<Client>) -> HttpResponse {
+    match client.images().list().limit(20).send().await {
+        Ok(result) => HttpResponse::Ok().json(serde_json::json!({
+            "images": result.images,
+            "total": result.total
+        })),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "error": e.to_string()
+        })),
+    }
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    let client = web::Data::new(
+        Client::from_env().expect("IMGSRC_API_KEY not set")
+    );
+
+    HttpServer::new(move || {
+        App::new()
+            .app_data(client.clone())
+            .route("/upload", web::post().to(upload))
+            .route("/images", web::get().to(list_images))
+    })
+    .bind("0.0.0.0:8080")?
+    .run()
+    .await
+}
+```
+
+## Concurrent Uploads
+
+Upload multiple images concurrently using tokio:
+
+```rust
+use imgsrc::Client;
+use std::path::PathBuf;
+use tokio::fs;
+
+async fn upload_images(
+    client: &Client,
+    paths: Vec<PathBuf>,
+) -> Vec<Result<String, imgsrc::Error>> {
+    let handles: Vec<_> = paths
+        .into_iter()
+        .map(|path| {
+            let client = client.clone();
+            tokio::spawn(async move {
+                let data = fs::read(&path).await?;
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("upload");
+
+                let image = client
+                    .images()
+                    .upload_bytes(&data)
+                    .path(&format!("batch/{}", filename))
+                    .send()
+                    .await?;
+
+                Ok(image.url)
+            })
+        })
+        .collect();
+
+    let mut results = Vec::new();
+    for handle in handles {
+        match handle.await {
+            Ok(result) => results.push(result),
+            Err(e) => results.push(Err(imgsrc::Error::Other(e.to_string()))),
+        }
+    }
+    results
+}
+
+#[tokio::main]
+async fn main() {
+    let client = Client::from_env().unwrap();
+
+    let paths = vec![
+        PathBuf::from("photo1.jpg"),
+        PathBuf::from("photo2.jpg"),
+        PathBuf::from("photo3.jpg"),
+    ];
+
+    let results = upload_images(&client, paths).await;
+
+    for result in results {
+        match result {
+            Ok(url) => println!("Uploaded: {}", url),
+            Err(e) => eprintln!("Error: {}", e),
+        }
+    }
+}
+```
+
+## Image Processing Pipeline
+
+Combine img-src with local image processing:
+
+```rust
+use image::{DynamicImage, ImageFormat};
+use imgsrc::Client;
+use std::io::Cursor;
+
+async fn process_and_upload(
+    client: &Client,
+    img: DynamicImage,
+    path: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    // Apply local processing (e.g., watermark, filter)
+    let processed = img.grayscale();
+
+    // Encode to bytes
+    let mut bytes = Vec::new();
+    processed.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Jpeg)?;
+
+    // Upload to img-src
+    let image = client
+        .images()
+        .upload_bytes(&bytes)
+        .path(path)
+        .content_type("image/jpeg")
+        .send()
+        .await?;
+
+    Ok(image.url)
+}
+```
+
+## CLI Tool Example
+
+Create a CLI tool for uploading images:
+
+```rust
+use clap::Parser;
+use imgsrc::Client;
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(name = "imgsrc-upload")]
+#[command(about = "Upload images to img-src")]
+struct Cli {
+    /// Files to upload
+    #[arg(required = true)]
+    files: Vec<PathBuf>,
+
+    /// Destination path prefix
+    #[arg(short, long, default_value = "uploads")]
+    prefix: String,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+    let client = Client::from_env()?;
+
+    for file in cli.files {
+        let filename = file.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("upload");
+
+        let path = format!("{}/{}", cli.prefix, filename);
+
+        print!("Uploading {}...", filename);
+
+        match client
+            .images()
+            .upload(&file)
+            .path(&path)
+            .send()
+            .await
+        {
+            Ok(image) => println!(" done: {}", image.url),
+            Err(e) => println!(" error: {}", e),
+        }
+    }
+
+    Ok(())
+}
+```
+
+## Error Handling
+
+```rust
+use imgsrc::{Client, Error};
+
+async fn handle_errors(client: &Client) {
+    match client.images().get("nonexistent").await {
+        Ok(image) => println!("Found: {}", image.url),
+        Err(Error::NotFound) => {
+            println!("Image not found");
+        }
+        Err(Error::RateLimit { retry_after }) => {
+            println!("Rate limited. Retry after {} seconds", retry_after);
+            tokio::time::sleep(std::time::Duration::from_secs(retry_after)).await;
+        }
+        Err(Error::Unauthorized) => {
+            println!("Invalid API key");
+        }
+        Err(Error::Api { code, message, .. }) => {
+            println!("API error {}: {}", code, message);
+        }
+        Err(e) => {
+            println!("Other error: {}", e);
+        }
+    }
+}
+```
+
+## Tera Template Integration
+
+```rust
+use tera::{Context, Tera};
+
+fn render_gallery(username: &str, images: &[&str]) -> String {
+    let mut tera = Tera::default();
+    tera.add_raw_template("gallery", r#"
+<!DOCTYPE html>
+<html>
+<head><title>Gallery</title></head>
+<body>
+    <div class="gallery">
+        {% for path in images %}
+        <img src="https://img-src.io/i/{{ username }}/{{ path }}?w=300&h=300&fit=cover"
+             alt="{{ path }}" loading="lazy">
+        {% endfor %}
+    </div>
+</body>
+</html>
+    "#).unwrap();
+
+    let mut context = Context::new();
+    context.insert("username", username);
+    context.insert("images", images);
+
+    tera.render("gallery", &context).unwrap()
+}
+```

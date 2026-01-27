@@ -1,0 +1,141 @@
+---
+title: API Overview
+description: "img-src API reference and authentication"
+---
+
+# API Overview
+
+The img-src API allows you to upload, transform, and manage images programmatically. All API endpoints are available at `https://api.img-src.io`.
+
+## Base URL
+
+```
+https://api.img-src.io
+```
+
+## Authentication
+
+All API endpoints (except `/health`) require authentication using an API key.
+
+### Getting an API Key
+
+1. Sign in to your [dashboard](https://img-src.io)
+2. Go to [Settings](https://img-src.io/settings)
+3. Click **Create API Key**
+4. Copy the key immediately (it won't be shown again)
+
+### Using Your API Key
+
+Include your API key in the `Authorization` header:
+
+```bash
+curl https://api.img-src.io/api/v1/images \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+<Warning>
+  API keys start with `imgsrc_` prefix. Keep them secure and never expose them in client-side code.
+</Warning>
+
+## Rate Limiting
+
+Rate limits are applied per API key:
+
+| Plan | Requests/Minute |
+|------|-----------------|
+| Free | 100 |
+| Pro | 500 |
+
+Rate limit information is included in response headers:
+
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1704067260
+```
+
+When rate limited, you'll receive a `429 Too Many Requests` response.
+
+## Response Format
+
+All responses are JSON. Successful responses return the requested data:
+
+```json
+{
+  "id": "img_abc123",
+  "url": "https://img-src.io/i/username/photo.jpg",
+  ...
+}
+```
+
+Error responses follow a consistent format:
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Image not found",
+    "status": 404
+  }
+}
+```
+
+### Common Error Codes
+
+| Code | Status | Description |
+|------|--------|-------------|
+| `UNAUTHORIZED` | 401 | Missing or invalid API key |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `VALIDATION_ERROR` | 400 | Invalid request parameters |
+| `RATE_LIMITED` | 429 | Too many requests |
+| `INTERNAL_ERROR` | 500 | Server error |
+
+## Pagination
+
+List endpoints support pagination with `limit` and `offset` parameters:
+
+```bash
+curl "https://api.img-src.io/api/v1/images?limit=20&offset=40" \
+  -H "Authorization: Bearer imgsrc_YOUR_API_KEY"
+```
+
+Paginated responses include total count:
+
+```json
+{
+  "images": [...],
+  "total": 150,
+  "limit": 20,
+  "offset": 40
+}
+```
+
+## CDN URLs
+
+After uploading, images are served via CDN:
+
+- **Primary**: `https://img-src.io/i/{username}/{path}`
+- **Secondary**: `https://cdn.img-src.io/{username}/{path}`
+
+Both URLs support the same transformation parameters.
+
+## API Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Images" icon="image" href="/api-reference/images/upload">
+    Upload, list, search, and delete images
+  </Card>
+  <Card title="Settings" icon="gear" href="/api-reference/settings/get">
+    Manage user preferences
+  </Card>
+  <Card title="API Keys" icon="key" href="/api-reference/api-keys/list">
+    Create and manage API keys
+  </Card>
+  <Card title="Presets" icon="sliders" href="/api-reference/presets/list">
+    Save transformation presets (Pro)
+  </Card>
+  <Card title="Usage" icon="chart-bar" href="/api-reference/usage/get">
+    View usage statistics
+  </Card>
+</CardGroup>
