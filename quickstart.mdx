@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: "Get started with img-src in 5 minutes"
+description: "Get started with img-src in 1 minute"
 ---
 
 # Quick Start
@@ -10,9 +10,72 @@ This guide will help you upload your first image and serve it with transformatio
 ## Prerequisites
 
 - An img-src account ([Sign up free](https://img-src.io/sign-up))
-- An API key from your [Settings page](https://img-src.io/settings)
 
-## Step 1: Get Your API Key
+---
+
+## Web Dashboard
+
+The fastest way to get started — no code or API key required.
+
+### Step 1: Upload an Image
+
+1. Go to [img-src.io/publish](https://img-src.io/publish) and sign in
+2. Drag & drop images or folders into the upload area, or click **Select Files** / **Select Folder**
+   - Max **5MB** per file, up to **20 files** at a time
+4. Once the upload completes, you'll see **"Publish complete"** with a preview of each image
+
+### Step 2: Get Your CDN URLs
+
+After publishing, each image shows **Available Formats** with ready-to-use CDN URLs:
+
+| Format | URL |
+|--------|-----|
+| **WEBP** | `https://img-src.io/i/username/photo.webp` |
+| **JPEG** | `https://img-src.io/i/username/photo.jpg` |
+| **PNG** | `https://img-src.io/i/username/photo.png` |
+| **AVIF** | `https://img-src.io/i/username/photo.avif` |
+
+Click the copy icon next to any URL to copy it to your clipboard.
+
+### Step 3: Serve with Transformations
+
+Add query parameters to your CDN URL to resize, crop, or adjust quality on the fly:
+
+```
+https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
+```
+
+<CodeGroup>
+
+```html Original
+<img src="https://img-src.io/i/username/photo.jpg" />
+```
+
+```html Resized (800px width)
+<img src="https://img-src.io/i/username/photo.jpg?w=800" />
+```
+
+```html Thumbnail (200x200, cover)
+<img src="https://img-src.io/i/username/photo.jpg?w=200&h=200&fit=cover" />
+```
+
+```html WebP with quality
+<img src="https://img-src.io/i/username/photo.webp?w=800&q=85" />
+```
+
+</CodeGroup>
+
+<Tip>
+  Output format is determined by the file extension in the URL. Change `.jpg` to `.webp` or `.avif` to convert formats.
+</Tip>
+
+---
+
+## API & SDK
+
+For automated workflows, use the API directly or through an SDK.
+
+### Step 1: Get Your API Key
 
 1. Go to [img-src.io/settings](https://img-src.io/settings)
 2. Click **Create API Key**
@@ -22,7 +85,7 @@ This guide will help you upload your first image and serve it with transformatio
   Keep your API key secure. Don't commit it to version control or expose it in client-side code.
 </Warning>
 
-## Step 2: Upload an Image
+### Step 2: Upload an Image
 
 <CodeGroup>
 
@@ -124,51 +187,7 @@ The response includes your CDN URL:
 }
 ```
 
-## Step 3: Serve with Transformations
-
-Now you can request the image with transformation parameters:
-
-<CodeGroup>
-
-```html Original
-<img src="https://img-src.io/i/username/photos/vacation.jpg" />
-```
-
-```html Resized (800px width)
-<img src="https://img-src.io/i/username/photos/vacation.jpg?w=800" />
-```
-
-```html Thumbnail (200x200, cover)
-<img src="https://img-src.io/i/username/photos/vacation.jpg?w=200&h=200&fit=cover" />
-```
-
-```html WebP with quality
-<img src="https://img-src.io/i/username/photos/vacation.webp?w=800&q=85" />
-```
-
-</CodeGroup>
-
-## Transformation Parameters
-
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `w` | Width in pixels | `w=800` |
-| `h` | Height in pixels | `h=600` |
-| `fit` | Fit mode | `fit=cover` |
-| `q` | Quality (1-100) | `q=85` |
-
-<Tip>
-  Output format is determined by the file extension in the URL. Change `.jpg` to `.webp` or `.avif` to convert formats.
-</Tip>
-
-### Fit Modes
-
-- **cover** - Fill the dimensions, cropping if needed
-- **contain** - Fit within dimensions, preserving aspect ratio
-- **fill** - Stretch to fill dimensions exactly
-- **scale-down** - Like contain, but never upscale
-
-## Step 4: List Your Images
+### Step 3: List Your Images
 
 <CodeGroup>
 
@@ -202,7 +221,7 @@ println!("{:?}", result.images);
 
 </CodeGroup>
 
-## Step 5: Delete an Image
+### Step 4: Delete an Image
 
 <CodeGroup>
 
@@ -232,15 +251,23 @@ client.images().delete("img_abc123").await?;
 
 </CodeGroup>
 
-## Using the Dashboard
+---
 
-You can also manage images through the web dashboard:
+## Transformation Parameters
 
-1. Go to [img-src.io](https://img-src.io)
-2. Sign in with your account
-3. Drag and drop images to upload
-4. Click on an image to copy its URL
-5. Use the URL builder to add transformations
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `w` | Width in pixels | `w=800` |
+| `h` | Height in pixels | `h=600` |
+| `fit` | Fit mode | `fit=cover` |
+| `q` | Quality (1-100) | `q=85` |
+
+### Fit Modes
+
+- **cover** - Fill the dimensions, cropping if needed
+- **contain** - Fit within dimensions, preserving aspect ratio
+- **fill** - Stretch to fill dimensions exactly
+- **scale-down** - Like contain, but never upscale
 
 ## Next Steps
 
