@@ -8,7 +8,7 @@ description: "Official Go SDK for img-src"
 The official Go SDK for img-src provides idiomatic Go access to the API.
 
 <Info>
-  **Package:** `github.com/img-src-io/sdk-go` | **Runtime:** Go 1.21+ | [pkg.go.dev](https://pkg.go.dev/github.com/img-src-io/sdk-go) | [GitHub](https://github.com/img-src-io/sdk-go)
+  **Package:** `github.com/img-src-io/sdk-go` | **Runtime:** Go 1.22+ | [pkg.go.dev](https://pkg.go.dev/github.com/img-src-io/sdk-go) | [GitHub](https://github.com/img-src-io/sdk-go)
 </Info>
 
 ## Installation
@@ -27,25 +27,30 @@ import (
     "fmt"
     "os"
 
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
 func main() {
-    client := imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+    s := sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
     // Upload an image
     file, _ := os.Open("photo.jpg")
     defer file.Close()
 
-    image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
-        File: file,
-        Path: "photos/vacation.jpg",
+    content, _ := io.ReadAll(file)
+    res, err := s.Images.Upload(context.Background(), &operations.UploadImageRequestBody{
+        File: &operations.File{
+            FileName: "photo.jpg",
+            Content:  content,
+        },
+        TargetPath: sdkgo.String("photos/vacation.jpg"),
     })
     if err != nil {
         panic(err)
     }
 
-    fmt.Println(image.URL)
+    fmt.Println(res.UploadResponse.URL)
     // https://img-src.io/i/username/photos/vacation.jpg
 }
 ```
@@ -53,11 +58,26 @@ func main() {
 ## Configuration
 
 ```go
-client := imgsrc.NewClient(
-    os.Getenv("IMGSRC_API_KEY"),
-    imgsrc.WithBaseURL("https://api.img-src.io"),
-    imgsrc.WithTimeout(30*time.Second),
-    imgsrc.WithRetries(3),
+import (
+    "time"
+
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/retry"
+)
+
+s := sdkgo.New(
+    sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")),
+    sdkgo.WithServerURL("https://api.img-src.io"),
+    sdkgo.WithTimeout(30*time.Second),
+    sdkgo.WithRetryConfig(retry.Config{
+        Strategy: "backoff",
+        Backoff: &retry.BackoffStrategy{
+            InitialInterval: 500,
+            MaxInterval:     60000,
+            MaxElapsedTime:  300000,
+            Exponent:        1.5,
+        },
+    }),
 )
 ```
 
@@ -66,168 +86,147 @@ client := imgsrc.NewClient(
 ### Upload
 
 ```go
+import (
+    "io"
+    "os"
+
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
+)
+
 // From file
 file, _ := os.Open("photo.jpg")
 defer file.Close()
+content, _ := io.ReadAll(file)
 
-image, err := client.Images.Upload(ctx, &imgsrc.UploadParams{
-    File: file,
-    Path: "photos/vacation.jpg",
+res, err := s.Images.Upload(ctx, &operations.UploadImageRequestBody{
+    File: &operations.File{
+        FileName: "photo.jpg",
+        Content:  content,
+    },
+    TargetPath: sdkgo.String("photos/vacation.jpg"),
 })
 
-// From bytes
-data, _ := os.ReadFile("photo.jpg")
-image, err := client.Images.Upload(ctx, &imgsrc.UploadParams{
-    Data:        data,
-    Path:        "photos/vacation.jpg",
-    ContentType: "image/jpeg",
-})
-
-// From URL
-image, err := client.Images.Upload(ctx, &imgsrc.UploadParams{
-    URL:  "https://example.com/photo.jpg",
-    Path: "photos/external.jpg",
+// With visibility (Pro)
+res, err := s.Images.Upload(ctx, &operations.UploadImageRequestBody{
+    File: &operations.File{
+        FileName: "photo.jpg",
+        Content:  content,
+    },
+    TargetPath: sdkgo.String("photos/private.jpg"),
+    Visibility: (*components.Visibility)(sdkgo.String("private")),
 })
 ```
 
 ### List
 
 ```go
-// List all images
-result, err := client.Images.List(ctx, nil)
-for _, image := range result.Images {
+// List all images (default limit: 50)
+res, err := s.Images.List(ctx, nil, nil, nil)
+for _, image := range res.ImageListResponse.Images {
     fmt.Println(image.URL)
 }
 
 // With pagination
-result, err := client.Images.List(ctx, &imgsrc.ListParams{
-    Limit:  20,
-    Offset: 40,
-})
+res, err := s.Images.List(ctx, sdkgo.Int64(20), sdkgo.Int64(40), nil)
 
-// Filter by prefix
-result, err := client.Images.List(ctx, &imgsrc.ListParams{
-    Prefix: "photos/",
-})
+// Filter by path prefix
+res, err := s.Images.List(ctx, sdkgo.Int64(50), nil, sdkgo.String("photos/"))
 ```
 
 ### Search
 
 ```go
-result, err := client.Images.Search(ctx, &imgsrc.SearchParams{
-    Query: "vacation",
-    Limit: 10,
-})
+res, err := s.Images.Search(ctx, "vacation", sdkgo.Int64(10))
+for _, result := range res.SearchResponse.Results {
+    fmt.Println(result.Paths)
+}
 ```
 
 ### Get
 
 ```go
-image, err := client.Images.Get(ctx, "img_abc123")
-fmt.Printf("Dimensions: %dx%d\n", image.Width, image.Height)
+res, err := s.Images.GetMetadata(ctx, "img_abc123")
+fmt.Printf("Dimensions: %dx%d\n",
+    res.MetadataResponse.Metadata.Width,
+    res.MetadataResponse.Metadata.Height)
 ```
 
 ### Delete
 
 ```go
-err := client.Images.Delete(ctx, "img_abc123")
+_, err := s.Images.Delete(ctx, "img_abc123")
 ```
 
 ### Create Signed URL (Pro)
 
 ```go
-result, err := client.Images.CreateSignedURL(ctx, "img_abc123", &imgsrc.SignedURLParams{
-    ExpiresIn: 3600, // 1 hour
-    Transform: &imgsrc.Transform{
-        Width:  800,
-        Height: 600,
-        Fit:    "cover",
-    },
+import "github.com/img-src-io/sdk-go/models/components"
+
+res, err := s.Images.CreateSignedURL(ctx, "img_abc123", &components.CreateSignedURLRequest{
+    ExpiresInSeconds: sdkgo.Int64(3600), // 1 hour (default)
 })
-fmt.Println(result.SignedURL)
+fmt.Println(res.SignedURLResponse.SignedURL)
 ```
 
-## URL Builder
-
-Build transformation URLs without API calls:
+### Update Visibility (Pro)
 
 ```go
-// Simple resize
-url := client.URL("username/photo.jpg").
-    Width(800).
-    Build()
-// https://img-src.io/i/username/photo.jpg?w=800
+import "github.com/img-src-io/sdk-go/models/components"
 
-// Full transformation (output format determined by file extension)
-url := client.URL("username/photo.webp").
-    Width(800).
-    Height(600).
-    Fit("cover").
-    Quality(85).
-    Build()
-// https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
+_, err := s.Images.UpdateVisibility(ctx, "img_abc123", components.UpdateVisibilityRequest{
+    Visibility: components.VisibilityPrivate,
+})
+```
 
-// Using a preset (Pro)
-url := client.URL("username/photo.jpg").
-    Preset("thumbnail").
-    Build()
-// https://img-src.io/i/username/photo.jpg?p:thumbnail
+### Delete Image Path
+
+```go
+res, err := s.Images.DeletePath(ctx, "username", "photos/old-photo.jpg")
+fmt.Println(res.PathDeleteResponse.ImageDeleted) // true if last path removed
 ```
 
 ## Settings
 
 ```go
+import "github.com/img-src-io/sdk-go/models/components"
+
 // Get settings
-settings, err := client.Settings.Get(ctx)
-fmt.Println(settings.DefaultQuality)
+res, err := s.Settings.Get(ctx)
+fmt.Println(res.SettingsResponse.Settings.DefaultQuality)
 
 // Update settings
-_, err = client.Settings.Update(ctx, &imgsrc.UpdateSettingsParams{
-    DefaultQuality: imgsrc.Int(85),
-    DefaultFitMode: imgsrc.String("cover"),
+_, err = s.Settings.Update(ctx, &components.UpdateSettingsRequest{
+    DefaultQuality: sdkgo.Int64(85),
+    DefaultFitMode: sdkgo.String("cover"),
+    DeliveryFormats: []string{"webp", "jpeg"},
 })
-```
-
-## API Keys
-
-```go
-// List keys
-result, err := client.APIKeys.List(ctx)
-for _, key := range result.APIKeys {
-    fmt.Printf("%s: %s...\n", key.Name, key.KeyPrefix)
-}
-
-// Create key
-newKey, err := client.APIKeys.Create(ctx, &imgsrc.CreateAPIKeyParams{
-    Name:          "Production",
-    Scopes:        []string{"read", "write"},
-    ExpiresInDays: imgsrc.Int(90),
-})
-fmt.Printf("Save this key: %s\n", newKey.Key)
-
-// Delete key
-err = client.APIKeys.Delete(ctx, "key_id")
 ```
 
 ## Presets (Pro)
 
 ```go
+import "github.com/img-src-io/sdk-go/models/components"
+
 // List presets
-result, err := client.Presets.List(ctx)
+res, err := s.Presets.ListPresets(ctx)
 
 // Create preset
-preset, err := client.Presets.Create(ctx, &imgsrc.CreatePresetParams{
+preset, err := s.Presets.CreatePreset(ctx, &components.CreatePresetRequest{
     Name: "thumbnail",
-    Params: map[string]interface{}{
+    Params: map[string]any{
         "w":   200,
         "h":   200,
         "fit": "cover",
     },
 })
 
+// Get preset
+preset, err := s.Presets.GetPreset(ctx, "preset_id")
+
 // Update preset
-_, err = client.Presets.Update(ctx, "preset_id", &imgsrc.UpdatePresetParams{
-    Params: map[string]interface{}{
+_, err = s.Presets.UpdatePreset(ctx, "preset_id", &components.UpdatePresetRequest{
+    Params: map[string]any{
         "w":   250,
         "h":   250,
         "fit": "cover",
@@ -235,44 +234,40 @@ _, err = client.Presets.Update(ctx, "preset_id", &imgsrc.UpdatePresetParams{
 })
 
 // Delete preset
-err = client.Presets.Delete(ctx, "thumbnail")
+_, err = s.Presets.DeletePreset(ctx, "preset_id")
 ```
 
 ## Usage
 
 ```go
-usage, err := client.Usage.Get(ctx)
+res, err := s.Usage.Get(ctx)
 
-fmt.Printf("Transformations: %d/%d\n",
-    usage.Transformations.Used,
-    usage.Transformations.Limit)
-fmt.Printf("Storage: %d bytes\n", usage.Storage.UsedBytes)
-fmt.Printf("Plan: %s\n", usage.Plan)
+fmt.Printf("Plan: %s\n", res.UsageResponse.PlanName)
+fmt.Printf("Storage: %.2f MB\n", res.UsageResponse.StorageUsedMB)
+fmt.Printf("Uploads this period: %d\n", res.UsageResponse.CurrentPeriod.Uploads)
 ```
 
 ## Error Handling
 
 ```go
 import (
-    imgsrc "github.com/img-src-io/sdk-go"
     "errors"
+
+    "github.com/img-src-io/sdk-go/models/apierrors"
 )
 
-image, err := client.Images.Get(ctx, "nonexistent")
+res, err := s.Images.GetMetadata(ctx, "nonexistent")
 if err != nil {
-    var notFound *imgsrc.NotFoundError
-    var rateLimit *imgsrc.RateLimitError
-    var apiErr *imgsrc.APIError
+    var apiErr *apierrors.APIError
+    var errResp *apierrors.ErrorResponse
 
     switch {
-    case errors.As(err, &notFound):
-        fmt.Println("Image not found")
-    case errors.As(err, &rateLimit):
-        fmt.Printf("Rate limited. Retry after %ds\n", rateLimit.RetryAfter)
+    case errors.As(err, &errResp):
+        fmt.Printf("API error: %s\n", errResp.Error_.Message)
     case errors.As(err, &apiErr):
-        fmt.Printf("API error: %s - %s\n", apiErr.Code, apiErr.Message)
+        fmt.Printf("HTTP %d: %s\n", apiErr.StatusCode, apiErr.Body)
     default:
-        fmt.Printf("Unknown error: %v\n", err)
+        fmt.Printf("Error: %v\n", err)
     }
 }
 ```
@@ -286,47 +281,66 @@ All methods accept a context for cancellation and timeouts:
 ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 defer cancel()
 
-image, err := client.Images.Get(ctx, "img_abc123")
+res, err := s.Images.GetMetadata(ctx, "img_abc123")
 ```
 
 ## Concurrent Uploads
 
 ```go
-func uploadImages(client *imgsrc.Client, paths []string) error {
-    var wg sync.WaitGroup
-    errCh := make(chan error, len(paths))
+import (
+    "context"
+    "io"
+    "os"
+    "path/filepath"
+    "sync"
+
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
+)
+
+func uploadImages(s *sdkgo.Imgsrc, paths []string) ([]string, error) {
+    var (
+        wg      sync.WaitGroup
+        mu      sync.Mutex
+        urls    []string
+        errored error
+    )
 
     for _, path := range paths {
         wg.Add(1)
         go func(p string) {
             defer wg.Done()
 
-            file, err := os.Open(p)
+            data, err := os.ReadFile(p)
             if err != nil {
-                errCh <- err
+                mu.Lock()
+                errored = err
+                mu.Unlock()
                 return
             }
-            defer file.Close()
 
-            _, err = client.Images.Upload(context.Background(), &imgsrc.UploadParams{
-                File: file,
-                Path: filepath.Base(p),
+            res, err := s.Images.Upload(context.Background(), &operations.UploadImageRequestBody{
+                File: &operations.File{
+                    FileName: filepath.Base(p),
+                    Content:  data,
+                },
+                TargetPath: sdkgo.String("batch/" + filepath.Base(p)),
             })
             if err != nil {
-                errCh <- err
+                mu.Lock()
+                errored = err
+                mu.Unlock()
+                return
             }
+
+            mu.Lock()
+            urls = append(urls, res.UploadResponse.URL)
+            mu.Unlock()
         }(path)
     }
 
     wg.Wait()
-    close(errCh)
-
-    for err := range errCh {
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+    return urls, errored
 }
 ```
 
@@ -337,13 +351,15 @@ package main
 
 import (
     "encoding/json"
+    "io"
     "net/http"
     "os"
 
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+var s = sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {
@@ -358,9 +374,13 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
     }
     defer file.Close()
 
-    image, err := client.Images.Upload(r.Context(), &imgsrc.UploadParams{
-        File: file,
-        Path: "uploads/" + header.Filename,
+    content, _ := io.ReadAll(file)
+    res, err := s.Images.Upload(r.Context(), &operations.UploadImageRequestBody{
+        File: &operations.File{
+            FileName: header.Filename,
+            Content:  content,
+        },
+        TargetPath: sdkgo.String("uploads/" + header.Filename),
     })
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -368,7 +388,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(image)
+    json.NewEncoder(w).Encode(res.UploadResponse)
 }
 
 func main() {

@@ -12,22 +12,25 @@ This guide shows how to integrate img-src into your Rust applications.
 Use the SDK for type-safe API access:
 
 ```rust
-use imgsrc::Client;
-use std::path::Path;
+use img_src::apis::{configuration::Configuration, images_api};
+use std::path::PathBuf;
 
 #[tokio::main]
-async fn main() -> Result<(), imgsrc::Error> {
-    let client = Client::from_env()?;
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = Configuration::new();
+    config.bearer_access_token = Some(
+        std::env::var("IMGSRC_API_KEY").expect("IMGSRC_API_KEY not set")
+    );
 
     // Upload an image
-    let image = client
-        .images()
-        .upload(Path::new("photo.jpg"))
-        .path("photos/vacation.jpg")
-        .send()
-        .await?;
+    let res = images_api::upload_image(
+        &config,
+        Some(PathBuf::from("photo.jpg")),
+        Some("photos/vacation.jpg"),
+        None,
+    ).await?;
 
-    println!("Uploaded: {}", image.url);
+    println!("Uploaded: {}", res.url);
     Ok(())
 }
 ```
@@ -37,8 +40,6 @@ async fn main() -> Result<(), imgsrc::Error> {
 Create a helper for building transformation URLs:
 
 ```rust
-use std::collections::HashMap;
-
 pub struct TransformOptions {
     pub width: Option<u32>,
     pub height: Option<u32>,
@@ -116,18 +117,12 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use imgsrc::Client;
-use serde::{Deserialize, Serialize};
+use img_src::apis::{configuration::Configuration, images_api};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 struct AppState {
-    imgsrc: Client,
-}
-
-#[derive(Serialize)]
-struct ImageResponse {
-    url: String,
+    config: Configuration,
 }
 
 async fn upload(
@@ -143,16 +138,24 @@ async fn upload(
         let filename = field.file_name().unwrap_or("upload").to_string();
         let data = field.bytes().await.unwrap();
 
-        match state
-            .imgsrc
-            .images()
-            .upload_bytes(&data)
-            .path(&format!("uploads/{}", filename))
-            .send()
-            .await
-        {
-            Ok(image) => return Json(json!({ "url": image.url })),
-            Err(e) => return Json(json!({ "error": e.to_string() })),
+        // Write to temp file for upload
+        let temp_path = std::env::temp_dir().join(&filename);
+        tokio::fs::write(&temp_path, &data).await.unwrap();
+
+        match images_api::upload_image(
+            &state.config,
+            Some(temp_path.clone()),
+            Some(&format!("uploads/{}", filename)),
+            None,
+        ).await {
+            Ok(res) => {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Json(json!({ "url": res.url }));
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&temp_path).await;
+                return Json(json!({ "error": e.to_string() }));
+            }
         }
     }
 
@@ -160,10 +163,10 @@ async fn upload(
 }
 
 async fn list_images(State(state): State<Arc<AppState>>) -> Json<Value> {
-    match state.imgsrc.images().list().limit(20).send().await {
-        Ok(result) => Json(json!({
-            "images": result.images,
-            "total": result.total
+    match images_api::list_images(&state.config, Some(20), None, None).await {
+        Ok(res) => Json(json!({
+            "images": res.images,
+            "total": res.total
         })),
         Err(e) => Json(json!({ "error": e.to_string() })),
     }
@@ -171,9 +174,12 @@ async fn list_images(State(state): State<Arc<AppState>>) -> Json<Value> {
 
 #[tokio::main]
 async fn main() {
-    let state = Arc::new(AppState {
-        imgsrc: Client::from_env().expect("IMGSRC_API_KEY not set"),
-    });
+    let mut config = Configuration::new();
+    config.bearer_access_token = Some(
+        std::env::var("IMGSRC_API_KEY").expect("IMGSRC_API_KEY not set")
+    );
+
+    let state = Arc::new(AppState { config });
 
     let app = Router::new()
         .route("/upload", post(upload))
@@ -192,10 +198,15 @@ async fn main() {
 use actix_multipart::Multipart;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use futures_util::StreamExt;
-use imgsrc::Client;
+use img_src::apis::{configuration::Configuration, images_api};
+use std::sync::Arc;
+
+struct AppState {
+    config: Configuration,
+}
 
 async fn upload(
-    client: web::Data<Client>,
+    state: web::Data<Arc<AppState>>,
     mut payload: Multipart,
 ) -> HttpResponse {
     let mut data = Vec::new();
@@ -217,27 +228,38 @@ async fn upload(
         }));
     }
 
-    match client
-        .images()
-        .upload_bytes(&data)
-        .path(&format!("uploads/{}", filename))
-        .send()
-        .await
-    {
-        Ok(image) => HttpResponse::Ok().json(serde_json::json!({
-            "url": image.url
-        })),
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
+    // Write to temp file for upload
+    let temp_path = std::env::temp_dir().join(&filename);
+    if let Err(e) = tokio::fs::write(&temp_path, &data).await {
+        return HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
-        })),
+        }));
+    }
+
+    match images_api::upload_image(
+        &state.config,
+        Some(temp_path.clone()),
+        Some(&format!("uploads/{}", filename)),
+        None,
+    ).await {
+        Ok(res) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            HttpResponse::Ok().json(serde_json::json!({ "url": res.url }))
+        }
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": e.to_string()
+            }))
+        }
     }
 }
 
-async fn list_images(client: web::Data<Client>) -> HttpResponse {
-    match client.images().list().limit(20).send().await {
-        Ok(result) => HttpResponse::Ok().json(serde_json::json!({
-            "images": result.images,
-            "total": result.total
+async fn list_images(state: web::Data<Arc<AppState>>) -> HttpResponse {
+    match images_api::list_images(&state.config, Some(20), None, None).await {
+        Ok(res) => HttpResponse::Ok().json(serde_json::json!({
+            "images": res.images,
+            "total": res.total
         })),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
             "error": e.to_string()
@@ -247,13 +269,16 @@ async fn list_images(client: web::Data<Client>) -> HttpResponse {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let client = web::Data::new(
-        Client::from_env().expect("IMGSRC_API_KEY not set")
+    let mut config = Configuration::new();
+    config.bearer_access_token = Some(
+        std::env::var("IMGSRC_API_KEY").expect("IMGSRC_API_KEY not set")
     );
+
+    let state = web::Data::new(Arc::new(AppState { config }));
 
     HttpServer::new(move || {
         App::new()
-            .app_data(client.clone())
+            .app_data(state.clone())
             .route("/upload", web::post().to(upload))
             .route("/images", web::get().to(list_images))
     })
@@ -268,32 +293,32 @@ async fn main() -> std::io::Result<()> {
 Upload multiple images concurrently using tokio:
 
 ```rust
-use imgsrc::Client;
+use img_src::apis::{configuration::Configuration, images_api, Error};
 use std::path::PathBuf;
-use tokio::fs;
+use std::sync::Arc;
 
 async fn upload_images(
-    client: &Client,
+    config: Arc<Configuration>,
     paths: Vec<PathBuf>,
-) -> Vec<Result<String, imgsrc::Error>> {
+) -> Vec<Result<String, String>> {
     let handles: Vec<_> = paths
         .into_iter()
         .map(|path| {
-            let client = client.clone();
+            let config = config.clone();
             tokio::spawn(async move {
-                let data = fs::read(&path).await?;
                 let filename = path.file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("upload");
 
-                let image = client
-                    .images()
-                    .upload_bytes(&data)
-                    .path(&format!("batch/{}", filename))
-                    .send()
-                    .await?;
-
-                Ok(image.url)
+                match images_api::upload_image(
+                    &config,
+                    Some(path),
+                    Some(&format!("batch/{}", filename)),
+                    None,
+                ).await {
+                    Ok(res) => Ok(res.url),
+                    Err(e) => Err(e.to_string()),
+                }
             })
         })
         .collect();
@@ -302,7 +327,7 @@ async fn upload_images(
     for handle in handles {
         match handle.await {
             Ok(result) => results.push(result),
-            Err(e) => results.push(Err(imgsrc::Error::Other(e.to_string()))),
+            Err(e) => results.push(Err(e.to_string())),
         }
     }
     results
@@ -310,7 +335,11 @@ async fn upload_images(
 
 #[tokio::main]
 async fn main() {
-    let client = Client::from_env().unwrap();
+    let mut config = Configuration::new();
+    config.bearer_access_token = Some(
+        std::env::var("IMGSRC_API_KEY").expect("IMGSRC_API_KEY not set")
+    );
+    let config = Arc::new(config);
 
     let paths = vec![
         PathBuf::from("photo1.jpg"),
@@ -318,7 +347,7 @@ async fn main() {
         PathBuf::from("photo3.jpg"),
     ];
 
-    let results = upload_images(&client, paths).await;
+    let results = upload_images(config, paths).await;
 
     for result in results {
         match result {
@@ -335,31 +364,36 @@ Combine img-src with local image processing:
 
 ```rust
 use image::{DynamicImage, ImageFormat};
-use imgsrc::Client;
+use img_src::apis::{configuration::Configuration, images_api};
 use std::io::Cursor;
+use std::path::PathBuf;
 
 async fn process_and_upload(
-    client: &Client,
+    config: &Configuration,
     img: DynamicImage,
     path: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // Apply local processing (e.g., watermark, filter)
     let processed = img.grayscale();
 
-    // Encode to bytes
+    // Encode to bytes and write to temp file
     let mut bytes = Vec::new();
     processed.write_to(&mut Cursor::new(&mut bytes), ImageFormat::Jpeg)?;
 
-    // Upload to img-src
-    let image = client
-        .images()
-        .upload_bytes(&bytes)
-        .path(path)
-        .content_type("image/jpeg")
-        .send()
-        .await?;
+    let temp_path = std::env::temp_dir().join("processed.jpg");
+    tokio::fs::write(&temp_path, &bytes).await?;
 
-    Ok(image.url)
+    // Upload to img-src
+    let res = images_api::upload_image(
+        config,
+        Some(temp_path.clone()),
+        Some(path),
+        None,
+    ).await?;
+
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    Ok(res.url)
 }
 ```
 
@@ -369,7 +403,7 @@ Create a CLI tool for uploading images:
 
 ```rust
 use clap::Parser;
-use imgsrc::Client;
+use img_src::apis::{configuration::Configuration, images_api};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -388,7 +422,11 @@ struct Cli {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
-    let client = Client::from_env()?;
+
+    let mut config = Configuration::new();
+    config.bearer_access_token = Some(
+        std::env::var("IMGSRC_API_KEY").expect("IMGSRC_API_KEY not set")
+    );
 
     for file in cli.files {
         let filename = file.file_name()
@@ -399,14 +437,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         print!("Uploading {}...", filename);
 
-        match client
-            .images()
-            .upload(&file)
-            .path(&path)
-            .send()
-            .await
-        {
-            Ok(image) => println!(" done: {}", image.url),
+        match images_api::upload_image(
+            &config,
+            Some(file),
+            Some(&path),
+            None,
+        ).await {
+            Ok(res) => println!(" done: {}", res.url),
             Err(e) => println!(" error: {}", e),
         }
     }
@@ -418,26 +455,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Error Handling
 
 ```rust
-use imgsrc::{Client, Error};
+use img_src::apis::{images_api, Error};
 
-async fn handle_errors(client: &Client) {
-    match client.images().get("nonexistent").await {
-        Ok(image) => println!("Found: {}", image.url),
-        Err(Error::NotFound) => {
-            println!("Image not found");
+async fn handle_errors(config: &img_src::apis::configuration::Configuration) {
+    match images_api::get_image(config, "nonexistent").await {
+        Ok(res) => println!("Found: {:?}", res.metadata),
+        Err(Error::ResponseError(resp)) => {
+            println!("HTTP {}: {}", resp.status, resp.content);
         }
-        Err(Error::RateLimit { retry_after }) => {
-            println!("Rate limited. Retry after {} seconds", retry_after);
-            tokio::time::sleep(std::time::Duration::from_secs(retry_after)).await;
+        Err(Error::Reqwest(e)) => {
+            println!("Network error: {}", e);
         }
-        Err(Error::Unauthorized) => {
-            println!("Invalid API key");
+        Err(Error::Serde(e)) => {
+            println!("Parse error: {}", e);
         }
-        Err(Error::Api { code, message, .. }) => {
-            println!("API error {}: {}", code, message);
-        }
-        Err(e) => {
-            println!("Other error: {}", e);
+        Err(Error::Io(e)) => {
+            println!("IO error: {}", e);
         }
     }
 }

@@ -8,7 +8,7 @@ description: "Official Python SDK for img-src"
 The official Python SDK for img-src provides a simple, Pythonic interface to the API.
 
 <Info>
-  **Package:** `img-src` | **Runtime:** Python 3.8+ | [PyPI](https://pypi.org/project/img-src/) | [GitHub](https://github.com/img-src-io/sdk-python)
+  **Package:** `img-src` | **Runtime:** Python 3.9.2+ | [PyPI](https://pypi.org/project/img-src/) | [GitHub](https://github.com/img-src-io/sdk-python)
 </Info>
 
 ## Installation
@@ -20,29 +20,47 @@ pip install img-src
 ## Quick Start
 
 ```python
-from img_src import ImgSrc
+import os
+from img_src import Imgsrc, models
 
-client = ImgSrc(api_key="imgsrc_YOUR_API_KEY")
+client = Imgsrc(bearer_auth=os.environ["IMGSRC_API_KEY"])
 
 # Upload an image
 with open("photo.jpg", "rb") as f:
-    image = client.images.upload(file=f, path="photos/vacation.jpg")
+    res = client.images.upload_image(request=models.UploadImageRequestBody(
+        file=models.File(
+            file_name="photo.jpg",
+            content=f.read(),
+        ),
+        target_path="photos/vacation.jpg",
+    ))
 
-print(image.url)
+print(res.upload_response.url)
 # https://img-src.io/i/username/photos/vacation.jpg
 ```
 
 ## Configuration
 
 ```python
-client = ImgSrc(
+from img_src import Imgsrc
+from img_src.utils import RetryConfig, BackoffStrategy
+
+client = Imgsrc(
     # Required
-    api_key="imgsrc_YOUR_API_KEY",
+    bearer_auth="imgsrc_YOUR_API_KEY",
 
     # Optional
-    base_url="https://api.img-src.io",  # Default
-    timeout=30.0,  # Request timeout in seconds
-    max_retries=3,  # Number of retries
+    server_url="https://api.img-src.io",  # Default
+    timeout_ms=30000,  # Request timeout in ms
+    retry_config=RetryConfig(
+        "backoff",
+        BackoffStrategy(
+            initial_interval=500,
+            max_interval=60000,
+            max_elapsed_time=300000,
+            exponent=1.5,
+        ),
+    ),
 )
 ```
 
@@ -50,10 +68,9 @@ client = ImgSrc(
 
 ```python
 import os
-from img_src import ImgSrc
+from img_src import Imgsrc
 
-# Automatically reads IMGSRC_API_KEY from environment
-client = ImgSrc(api_key=os.environ["IMGSRC_API_KEY"])
+client = Imgsrc(bearer_auth=os.environ["IMGSRC_API_KEY"])
 ```
 
 ## Images
@@ -61,199 +78,188 @@ client = ImgSrc(api_key=os.environ["IMGSRC_API_KEY"])
 ### Upload
 
 ```python
-# From file path
+from img_src import models
+
+# From file
 with open("photo.jpg", "rb") as f:
-    image = client.images.upload(file=f, path="photos/vacation.jpg")
+    res = client.images.upload_image(request=models.UploadImageRequestBody(
+        file=models.File(
+            file_name="photo.jpg",
+            content=f.read(),
+        ),
+        target_path="photos/vacation.jpg",
+    ))
 
 # From bytes
-image_bytes = Path("photo.jpg").read_bytes()
-image = client.images.upload(
-    file=image_bytes,
-    path="photos/vacation.jpg",
-    content_type="image/jpeg"
-)
+image_bytes = open("photo.jpg", "rb").read()
+res = client.images.upload_image(request=models.UploadImageRequestBody(
+    file=models.File(
+        file_name="photo.jpg",
+        content=image_bytes,
+    ),
+    target_path="photos/vacation.jpg",
+))
 
-# From URL
-image = client.images.upload(
-    url="https://example.com/photo.jpg",
-    path="photos/external.jpg"
-)
+# With visibility (Pro)
+res = client.images.upload_image(request=models.UploadImageRequestBody(
+    file=models.File(file_name="photo.jpg", content=image_bytes),
+    target_path="photos/private.jpg",
+    visibility="private",
+))
 ```
 
 ### List
 
 ```python
-# List all images
-result = client.images.list()
-for image in result.images:
+# List all images (default limit: 50)
+res = client.images.list_images()
+for image in res.image_list_response.images:
     print(image.url)
 
 # With pagination
-result = client.images.list(limit=20, offset=40)
+res = client.images.list_images(limit=20, offset=40)
 
 # Filter by path prefix
-result = client.images.list(prefix="photos/")
+res = client.images.list_images(path="photos/")
 ```
 
 ### Search
 
 ```python
-result = client.images.search(query="vacation", limit=10)
-for image in result.images:
-    print(image.paths)
+res = client.images.search_images(q="vacation", limit=10)
+for result in res.search_response.results:
+    print(result.paths)
 ```
 
 ### Get
 
 ```python
-image = client.images.get("img_abc123")
-print(f"Dimensions: {image.width}x{image.height}")
+res = client.images.get_image(id="img_abc123")
+print(f"Dimensions: {res.metadata_response.metadata.width}x{res.metadata_response.metadata.height}")
 ```
 
 ### Delete
 
 ```python
-client.images.delete("img_abc123")
+client.images.delete_image(id="img_abc123")
 ```
 
 ### Create Signed URL (Pro)
 
 ```python
-result = client.images.create_signed_url(
-    "img_abc123",
-    expires_in=3600,  # 1 hour
-    transform={"w": 800, "h": 600, "fit": "cover"}
+res = client.images.create_signed_url(
+    id="img_abc123",
+    expires_in_seconds=3600,  # 1 hour (default)
 )
-print(result.signed_url)
+print(res.signed_url_response.signed_url)
 ```
 
-## URL Builder
-
-Build transformation URLs without API calls:
+### Update Visibility (Pro)
 
 ```python
-# Simple resize
-url = client.url("username/photo.jpg").width(800).build()
-# https://img-src.io/i/username/photo.jpg?w=800
+client.images.update_visibility(id="img_abc123", visibility="private")
+```
 
-# Full transformation
-# Output format is determined by file extension
-url = (
-    client.url("username/photo.webp")
-    .width(800)
-    .height(600)
-    .fit("cover")
-    .quality(85)
-    .build()
-)
-# https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
+### Delete Image Path
 
-# Using a preset (Pro)
-url = client.url("username/photo.jpg").preset("thumbnail").build()
-# https://img-src.io/i/username/photo.jpg?p:thumbnail
+```python
+res = client.images.delete_image_path(username="username", filepath="photos/old-photo.jpg")
+print(res.path_delete_response.image_deleted)  # True if last path removed
 ```
 
 ## Settings
 
 ```python
 # Get settings
-settings = client.settings.get()
-print(settings.default_quality)
+res = client.settings.get_settings()
+print(res.settings_response.settings.default_quality)
 
 # Update settings
-client.settings.update(
+client.settings.update_settings(request=models.UpdateSettingsRequest(
     default_quality=85,
-    default_fit_mode="cover"
-)
-```
-
-## API Keys
-
-```python
-# List keys
-result = client.api_keys.list()
-for key in result.api_keys:
-    print(f"{key.name}: {key.key_prefix}...")
-
-# Create key
-new_key = client.api_keys.create(
-    name="Production",
-    scopes=["read", "write"],
-    expires_in_days=90
-)
-print(f"Save this key: {new_key.key}")
-
-# Delete key
-client.api_keys.delete("key_id")
+    default_fit_mode="cover",
+    delivery_formats=["webp", "jpeg"],
+))
 ```
 
 ## Presets (Pro)
 
 ```python
+from img_src import models
+
 # List presets
-result = client.presets.list()
+res = client.presets.list_presets()
 
 # Create preset
-preset = client.presets.create(
+res = client.presets.create_preset(request=models.CreatePresetRequest(
     name="thumbnail",
-    params={"w": 200, "h": 200, "fit": "cover"}
-)
+    params={"w": 200, "h": 200, "fit": "cover"},
+))
+
+# Get preset
+res = client.presets.get_preset(id="preset_id")
 
 # Update preset
-client.presets.update(
-    "preset_id",
-    params={"w": 250, "h": 250, "fit": "cover"}
+client.presets.update_preset(
+    id="preset_id",
+    params={"w": 250, "h": 250, "fit": "cover"},
 )
 
 # Delete preset
-client.presets.delete("thumbnail")
+client.presets.delete_preset(name="thumbnail")
 ```
 
 ## Usage
 
 ```python
-usage = client.usage.get()
+res = client.usage.get_usage()
 
-print(f"Transformations: {usage.transformations.used}/{usage.transformations.limit}")
-print(f"Storage: {usage.storage.used_bytes} bytes")
-print(f"Plan: {usage.plan}")
+print(f"Plan: {res.usage_response.plan_name}")
+print(f"Storage: {res.usage_response.storage_used_mb} MB")
+print(f"Uploads this period: {res.usage_response.current_period.uploads}")
 ```
 
 ## Error Handling
 
 ```python
-from img_src import ImgSrc
-from img_src.errors import ImgSrcError, RateLimitError, NotFoundError
+from img_src import Imgsrc
+from img_src.errors import ImgsrcError, ImgsrcDefaultError
 
 try:
-    client.images.get("nonexistent")
-except NotFoundError:
-    print("Image not found")
-except RateLimitError as e:
-    print(f"Rate limited. Retry after {e.retry_after}s")
-except ImgSrcError as e:
-    print(f"API error: {e.code} - {e.message}")
+    client.images.get_image(id="nonexistent")
+except ImgsrcDefaultError as e:
+    print(f"API error: {e}")
+except ImgsrcError as e:
+    print(f"SDK error: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
 ```
 
 ## Async Support
 
-The SDK supports async/await:
+The SDK provides async variants of all methods using the `_async` suffix:
 
 ```python
 import asyncio
-from img_src import AsyncImgSrc
+from img_src import Imgsrc, models
 
 async def main():
-    client = AsyncImgSrc(api_key="imgsrc_YOUR_API_KEY")
+    client = Imgsrc(bearer_auth="imgsrc_YOUR_API_KEY")
 
-    # Upload
+    # Upload (async)
     with open("photo.jpg", "rb") as f:
-        image = await client.images.upload(file=f, path="photos/vacation.jpg")
+        res = await client.images.upload_image_async(
+            request=models.UploadImageRequestBody(
+                file=models.File(file_name="photo.jpg", content=f.read()),
+                target_path="photos/vacation.jpg",
+            )
+        )
 
-    # List
-    result = await client.images.list()
+    # List (async)
+    res = await client.images.list_images_async()
 
-    await client.close()
+    # Search (async)
+    res = await client.images.search_images_async(q="vacation")
 
 asyncio.run(main())
 ```
@@ -261,8 +267,8 @@ asyncio.run(main())
 ### Async Context Manager
 
 ```python
-async with AsyncImgSrc(api_key="imgsrc_YOUR_API_KEY") as client:
-    image = await client.images.get("img_abc123")
+async with Imgsrc(bearer_auth="imgsrc_YOUR_API_KEY") as client:
+    res = await client.images.get_image_async(id="img_abc123")
 ```
 
 ## Framework Examples
@@ -271,24 +277,25 @@ async with AsyncImgSrc(api_key="imgsrc_YOUR_API_KEY") as client:
 
 ```python
 from fastapi import FastAPI, UploadFile
-from img_src import AsyncImgSrc
+from img_src import Imgsrc, models
+import os
 
 app = FastAPI()
-client = AsyncImgSrc(api_key="imgsrc_YOUR_API_KEY")
+client = Imgsrc(bearer_auth=os.environ["IMGSRC_API_KEY"])
 
 @app.post("/upload")
 async def upload(file: UploadFile):
     content = await file.read()
-    image = await client.images.upload(
-        file=content,
-        path=f"uploads/{file.filename}",
-        content_type=file.content_type
+    res = await client.images.upload_image_async(
+        request=models.UploadImageRequestBody(
+            file=models.File(
+                file_name=file.filename,
+                content=content,
+            ),
+            target_path=f"uploads/{file.filename}",
+        )
     )
-    return {"url": image.url}
-
-@app.on_event("shutdown")
-async def shutdown():
-    await client.close()
+    return {"url": res.upload_response.url}
 ```
 
 ### Django
@@ -297,40 +304,49 @@ async def shutdown():
 # views.py
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from img_src import ImgSrc
+from django.conf import settings
+from img_src import Imgsrc, models
 
-client = ImgSrc(api_key=settings.IMGSRC_API_KEY)
+client = Imgsrc(bearer_auth=settings.IMGSRC_API_KEY)
 
 @csrf_exempt
 def upload(request):
     if request.method == "POST":
         file = request.FILES["file"]
-        image = client.images.upload(
-            file=file.read(),
-            path=f"uploads/{file.name}",
-            content_type=file.content_type
+        res = client.images.upload_image(
+            request=models.UploadImageRequestBody(
+                file=models.File(
+                    file_name=file.name,
+                    content=file.read(),
+                ),
+                target_path=f"uploads/{file.name}",
+            )
         )
-        return JsonResponse({"url": image.url})
+        return JsonResponse({"url": res.upload_response.url})
 ```
 
 ### Flask
 
 ```python
 from flask import Flask, request, jsonify
-from img_src import ImgSrc
+from img_src import Imgsrc, models
 
 app = Flask(__name__)
-client = ImgSrc(api_key="imgsrc_YOUR_API_KEY")
+client = Imgsrc(bearer_auth="imgsrc_YOUR_API_KEY")
 
 @app.route("/upload", methods=["POST"])
 def upload():
     file = request.files["file"]
-    image = client.images.upload(
-        file=file.read(),
-        path=f"uploads/{file.filename}",
-        content_type=file.content_type
+    res = client.images.upload_image(
+        request=models.UploadImageRequestBody(
+            file=models.File(
+                file_name=file.filename,
+                content=file.read(),
+            ),
+            target_path=f"uploads/{file.filename}",
+        )
     )
-    return jsonify({"url": image.url})
+    return jsonify({"url": res.upload_response.url})
 ```
 
 ## Type Hints
@@ -338,11 +354,18 @@ def upload():
 The SDK includes full type hints for IDE support:
 
 ```python
-from img_src import ImgSrc
-from img_src.types import Image, Settings, Preset
+from img_src import models
 
-def process_image(image: Image) -> str:
-    return image.url
+# Component types
+from img_src.models import (
+    UploadResponse,
+    ImageListResponse,
+    SearchResponse,
+    MetadataResponse,
+    SettingsResponse,
+    UsageResponse,
+    Preset,
+)
 ```
 
 ## Related

@@ -17,14 +17,16 @@ package main
 import (
     "context"
     "fmt"
+    "io"
     "log"
     "os"
 
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
 func main() {
-    client := imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+    s := sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
     // Upload
     file, err := os.Open("photo.jpg")
@@ -33,15 +35,19 @@ func main() {
     }
     defer file.Close()
 
-    image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
-        File: file,
-        Path: "photos/vacation.jpg",
+    content, _ := io.ReadAll(file)
+    res, err := s.Images.Upload(context.Background(), &operations.UploadImageRequestBody{
+        File: &operations.File{
+            FileName: "photo.jpg",
+            Content:  content,
+        },
+        TargetPath: sdkgo.String("photos/vacation.jpg"),
     })
     if err != nil {
         log.Fatal(err)
     }
 
-    fmt.Println(image.URL)
+    fmt.Println(res.UploadResponse.URL)
 }
 ```
 
@@ -120,16 +126,16 @@ Create an upload endpoint:
 package main
 
 import (
-    "context"
     "encoding/json"
     "io"
     "net/http"
     "os"
 
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+var s = sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {
@@ -150,10 +156,15 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
     }
     defer file.Close()
 
+    content, _ := io.ReadAll(file)
+
     // Upload to img-src
-    image, err := client.Images.Upload(r.Context(), &imgsrc.UploadParams{
-        File: file,
-        Path: "uploads/" + header.Filename,
+    res, err := s.Images.Upload(r.Context(), &operations.UploadImageRequestBody{
+        File: &operations.File{
+            FileName: header.Filename,
+            Content:  content,
+        },
+        TargetPath: sdkgo.String("uploads/" + header.Filename),
     })
     if err != nil {
         http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -163,7 +174,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
     // Return JSON response
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(map[string]string{
-        "url": image.URL,
+        "url": res.UploadResponse.URL,
     })
 }
 
@@ -179,14 +190,16 @@ func main() {
 package main
 
 import (
+    "io"
     "net/http"
     "os"
 
     "github.com/gin-gonic/gin"
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+var s = sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
 func main() {
     r := gin.Default()
@@ -199,28 +212,30 @@ func main() {
         }
         defer file.Close()
 
-        image, err := client.Images.Upload(c.Request.Context(), &imgsrc.UploadParams{
-            File: file,
-            Path: "uploads/" + header.Filename,
+        content, _ := io.ReadAll(file)
+        res, err := s.Images.Upload(c.Request.Context(), &operations.UploadImageRequestBody{
+            File: &operations.File{
+                FileName: header.Filename,
+                Content:  content,
+            },
+            TargetPath: sdkgo.String("uploads/" + header.Filename),
         })
         if err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
             return
         }
 
-        c.JSON(http.StatusOK, gin.H{"url": image.URL})
+        c.JSON(http.StatusOK, gin.H{"url": res.UploadResponse.URL})
     })
 
     r.GET("/images", func(c *gin.Context) {
-        result, err := client.Images.List(c.Request.Context(), &imgsrc.ListParams{
-            Limit: 20,
-        })
+        res, err := s.Images.List(c.Request.Context(), sdkgo.Int64(20), nil, nil)
         if err != nil {
             c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
             return
         }
 
-        c.JSON(http.StatusOK, result)
+        c.JSON(http.StatusOK, res.ImageListResponse)
     })
 
     r.Run(":8080")
@@ -233,14 +248,16 @@ func main() {
 package main
 
 import (
+    "io"
     "net/http"
     "os"
 
     "github.com/labstack/echo/v4"
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+var s = sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
 func main() {
     e := echo.New()
@@ -261,9 +278,13 @@ func main() {
         }
         defer src.Close()
 
-        image, err := client.Images.Upload(c.Request().Context(), &imgsrc.UploadParams{
-            File: src,
-            Path: "uploads/" + file.Filename,
+        content, _ := io.ReadAll(src)
+        res, err := s.Images.Upload(c.Request().Context(), &operations.UploadImageRequestBody{
+            File: &operations.File{
+                FileName: file.Filename,
+                Content:  content,
+            },
+            TargetPath: sdkgo.String("uploads/" + file.Filename),
         })
         if err != nil {
             return c.JSON(http.StatusInternalServerError, map[string]string{
@@ -272,7 +293,7 @@ func main() {
         }
 
         return c.JSON(http.StatusOK, map[string]string{
-            "url": image.URL,
+            "url": res.UploadResponse.URL,
         })
     })
 
@@ -286,13 +307,15 @@ func main() {
 package main
 
 import (
+    "io"
     "os"
 
     "github.com/gofiber/fiber/v2"
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-var client = imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+var s = sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
 
 func main() {
     app := fiber.New()
@@ -313,9 +336,13 @@ func main() {
         }
         defer src.Close()
 
-        image, err := client.Images.Upload(c.Context(), &imgsrc.UploadParams{
-            File: src,
-            Path: "uploads/" + file.Filename,
+        content, _ := io.ReadAll(src)
+        res, err := s.Images.Upload(c.Context(), &operations.UploadImageRequestBody{
+            File: &operations.File{
+                FileName: file.Filename,
+                Content:  content,
+            },
+            TargetPath: sdkgo.String("uploads/" + file.Filename),
         })
         if err != nil {
             return c.Status(500).JSON(fiber.Map{
@@ -324,7 +351,7 @@ func main() {
         }
 
         return c.JSON(fiber.Map{
-            "url": image.URL,
+            "url": res.UploadResponse.URL,
         })
     })
 
@@ -341,14 +368,15 @@ package main
 
 import (
     "context"
-    "fmt"
     "os"
+    "path/filepath"
     "sync"
 
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-func uploadImages(client *imgsrc.Client, paths []string) ([]string, error) {
+func uploadImages(s *sdkgo.Imgsrc, paths []string) ([]string, error) {
     var (
         wg      sync.WaitGroup
         mu      sync.Mutex
@@ -361,18 +389,20 @@ func uploadImages(client *imgsrc.Client, paths []string) ([]string, error) {
         go func(p string) {
             defer wg.Done()
 
-            file, err := os.Open(p)
+            data, err := os.ReadFile(p)
             if err != nil {
                 mu.Lock()
                 errored = err
                 mu.Unlock()
                 return
             }
-            defer file.Close()
 
-            image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
-                File: file,
-                Path: "batch/" + filepath.Base(p),
+            res, err := s.Images.Upload(context.Background(), &operations.UploadImageRequestBody{
+                File: &operations.File{
+                    FileName: filepath.Base(p),
+                    Content:  data,
+                },
+                TargetPath: sdkgo.String("batch/" + filepath.Base(p)),
             })
             if err != nil {
                 mu.Lock()
@@ -382,7 +412,7 @@ func uploadImages(client *imgsrc.Client, paths []string) ([]string, error) {
             }
 
             mu.Lock()
-            urls = append(urls, image.URL)
+            urls = append(urls, res.UploadResponse.URL)
             mu.Unlock()
         }(path)
     }
@@ -402,7 +432,6 @@ package main
 import (
     "fmt"
     "net/http"
-    "strconv"
 )
 
 func proxyHandler(w http.ResponseWriter, r *http.Request) {
@@ -494,27 +523,24 @@ func galleryHandler(w http.ResponseWriter, r *http.Request) {
 ```go
 import (
     "errors"
-    imgsrc "github.com/img-src-io/sdk-go"
+
+    "github.com/img-src-io/sdk-go/models/apierrors"
 )
 
-image, err := client.Images.Get(ctx, "nonexistent")
+res, err := s.Images.GetMetadata(ctx, "nonexistent")
 if err != nil {
-    var notFound *imgsrc.NotFoundError
-    var rateLimit *imgsrc.RateLimitError
-    var apiErr *imgsrc.APIError
+    var apiErr *apierrors.APIError
+    var errResp *apierrors.ErrorResponse
 
     switch {
-    case errors.As(err, &notFound):
-        // Handle 404
-        log.Println("Image not found")
-    case errors.As(err, &rateLimit):
-        // Handle rate limiting
-        log.Printf("Rate limited, retry after %d seconds", rateLimit.RetryAfter)
+    case errors.As(err, &errResp):
+        // Structured API error
+        log.Printf("API error: %s", errResp.Error_.Message)
     case errors.As(err, &apiErr):
-        // Handle other API errors
-        log.Printf("API error: %s - %s", apiErr.Code, apiErr.Message)
+        // HTTP error
+        log.Printf("HTTP %d: %s", apiErr.StatusCode, apiErr.Body)
     default:
-        // Handle network/other errors
+        // Network/other errors
         log.Printf("Error: %v", err)
     }
 }

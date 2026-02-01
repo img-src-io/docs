@@ -32,33 +32,48 @@ yarn add @img-src/sdk
 ## Quick Start
 
 ```typescript
-import { ImgSrc } from '@img-src/sdk';
+import { Imgsrc } from "@img-src/sdk";
+import fs from "fs";
 
-const client = new ImgSrc({
-  apiKey: process.env.IMGSRC_API_KEY
+const client = new Imgsrc({
+  bearerAuth: process.env.IMGSRC_API_KEY,
 });
 
 // Upload an image
-const image = await client.images.upload({
-  file: fs.createReadStream('photo.jpg'),
-  path: 'photos/vacation.jpg'
+const { uploadResponse } = await client.images.uploadImage({
+  file: {
+    fileName: "photo.jpg",
+    content: fs.readFileSync("photo.jpg"),
+  },
+  targetPath: "photos/vacation.jpg",
 });
 
-console.log(image.url);
+console.log(uploadResponse?.url);
 // https://img-src.io/i/username/photos/vacation.jpg
 ```
 
 ## Configuration
 
 ```typescript
-const client = new ImgSrc({
+import { Imgsrc } from "@img-src/sdk";
+
+const client = new Imgsrc({
   // Required
-  apiKey: 'imgsrc_YOUR_API_KEY',
+  bearerAuth: "imgsrc_YOUR_API_KEY",
 
   // Optional
-  baseUrl: 'https://api.img-src.io', // Default
-  timeout: 30000, // Request timeout in ms
-  retries: 3, // Number of retries
+  serverURL: "https://api.img-src.io", // Default
+  timeoutMs: 30000, // Request timeout in ms
+  retryConfig: {
+    strategy: "backoff",
+    backoff: {
+      initialInterval: 500,
+      maxInterval: 60000,
+      maxElapsedTime: 300000,
+      exponent: 1.5,
+    },
+    retryConnectionErrors: true,
+  },
 });
 ```
 
@@ -67,200 +82,197 @@ const client = new ImgSrc({
 ### Upload
 
 ```typescript
-import fs from 'fs';
+import fs from "fs";
 
-// From file path
-const image = await client.images.upload({
-  file: fs.createReadStream('photo.jpg'),
-  path: 'photos/vacation.jpg'
+// From file
+const { uploadResponse } = await client.images.uploadImage({
+  file: {
+    fileName: "photo.jpg",
+    content: fs.readFileSync("photo.jpg"),
+  },
+  targetPath: "photos/vacation.jpg",
 });
 
-// From buffer
-const buffer = await fs.promises.readFile('photo.jpg');
-const image = await client.images.upload({
-  file: buffer,
-  path: 'photos/vacation.jpg',
-  contentType: 'image/jpeg'
+// From a Blob
+const blob = new Blob([fs.readFileSync("photo.jpg")]);
+const { uploadResponse: res } = await client.images.uploadImage({
+  file: blob,
+  targetPath: "photos/vacation.jpg",
 });
 
-// From URL (fetched server-side)
-const image = await client.images.upload({
-  url: 'https://example.com/photo.jpg',
-  path: 'photos/external.jpg'
+// With visibility (Pro)
+const { uploadResponse: privateImg } = await client.images.uploadImage({
+  file: blob,
+  targetPath: "photos/private.jpg",
+  visibility: "private",
 });
 ```
 
 ### List
 
 ```typescript
-// List all images
-const { images, total } = await client.images.list();
+// List all images (default limit: 50)
+const { imageListResponse } = await client.images.listImages();
+for (const image of imageListResponse?.images ?? []) {
+  console.log(image.url);
+}
 
 // With pagination
-const { images } = await client.images.list({
-  limit: 20,
-  offset: 40
-});
+const { imageListResponse: page } = await client.images.listImages(20, 40);
 
 // Filter by path prefix
-const { images } = await client.images.list({
-  prefix: 'photos/'
-});
+const { imageListResponse: photos } = await client.images.listImages(
+  50,
+  undefined,
+  "photos/"
+);
 ```
 
 ### Search
 
 ```typescript
-const { images } = await client.images.search({
-  query: 'vacation',
-  limit: 10
-});
+const { searchResponse } = await client.images.searchImages("vacation", 10);
+for (const result of searchResponse?.results ?? []) {
+  console.log(result.paths);
+}
 ```
 
 ### Get
 
 ```typescript
-const image = await client.images.get('img_abc123');
-console.log(image.width, image.height);
+const { metadataResponse } = await client.images.getImage("img_abc123");
+console.log(metadataResponse?.metadata?.width, metadataResponse?.metadata?.height);
 ```
 
 ### Delete
 
 ```typescript
-await client.images.delete('img_abc123');
+await client.images.deleteImage("img_abc123");
 ```
 
 ### Create Signed URL (Pro)
 
 ```typescript
-const { signed_url, expires_at } = await client.images.createSignedUrl('img_abc123', {
-  expiresIn: 3600, // 1 hour
-  transform: {
-    w: 800,
-    h: 600,
-    fit: 'cover'
-  }
+const { signedUrlResponse } = await client.images.createSignedUrl("img_abc123", {
+  expiresInSeconds: 3600, // 1 hour (default)
+});
+console.log(signedUrlResponse?.signedUrl);
+```
+
+### Update Visibility (Pro)
+
+```typescript
+await client.images.updateImageVisibility("img_abc123", {
+  visibility: "private",
 });
 ```
 
-## URL Builder
-
-Build transformation URLs without making API calls:
+### Delete Image Path
 
 ```typescript
-// Simple resize
-const url = client.url('username/photo.jpg')
-  .width(800)
-  .build();
-// https://img-src.io/i/username/photo.jpg?w=800
-
-// Full transformation (output format determined by file extension)
-const url = client.url('username/photo.webp')
-  .width(800)
-  .height(600)
-  .fit('cover')
-  .quality(85)
-  .build();
-// https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
-
-// Using a preset (Pro)
-const url = client.url('username/photo.jpg')
-  .preset('thumbnail')
-  .build();
-// https://img-src.io/i/username/photo.jpg?p:thumbnail
+const { pathDeleteResponse } = await client.images.deleteImagePath(
+  "username",
+  "photos/old-photo.jpg"
+);
+console.log(pathDeleteResponse?.imageDeleted); // true if last path removed
 ```
 
 ## Settings
 
 ```typescript
 // Get settings
-const { settings } = await client.settings.get();
+const { settingsResponse } = await client.settings.getSettings();
+console.log(settingsResponse?.settings?.defaultQuality);
 
 // Update settings
-await client.settings.update({
-  default_quality: 85,
-  default_fit_mode: 'cover'
+await client.settings.updateSettings({
+  defaultQuality: 85,
+  defaultFitMode: "cover",
+  deliveryFormats: ["webp", "jpeg"],
 });
-```
-
-## API Keys
-
-```typescript
-// List keys
-const { api_keys } = await client.apiKeys.list();
-
-// Create key
-const { key } = await client.apiKeys.create({
-  name: 'Production',
-  scopes: ['read', 'write'],
-  expiresInDays: 90
-});
-
-// Delete key
-await client.apiKeys.delete('key_id');
 ```
 
 ## Presets (Pro)
 
 ```typescript
 // List presets
-const { presets } = await client.presets.list();
+const { listPresetsResponse } = await client.presets.listPresets();
 
 // Create preset
-const preset = await client.presets.create({
-  name: 'thumbnail',
-  params: { w: 200, h: 200, fit: 'cover' }
+const { preset } = await client.presets.createPreset({
+  name: "thumbnail",
+  params: { w: 200, h: 200, fit: "cover" },
 });
 
+// Get preset
+const { preset: fetched } = await client.presets.getPreset("preset_id");
+
 // Update preset
-await client.presets.update('preset_id', {
-  params: { w: 250, h: 250, fit: 'cover' }
+await client.presets.updatePreset("preset_id", {
+  params: { w: 250, h: 250, fit: "cover" },
 });
 
 // Delete preset
-await client.presets.delete('thumbnail');
+await client.presets.deletePreset("preset_id");
 ```
 
 ## Usage
 
 ```typescript
-const { usage, billing_period, plan } = await client.usage.get();
+const { usageResponse } = await client.usage.getUsage();
 
-console.log(`Transformations: ${usage.transformations.used}/${usage.transformations.limit}`);
-console.log(`Storage: ${usage.storage.used_bytes} bytes`);
+console.log(`Plan: ${usageResponse?.planName}`);
+console.log(`Storage: ${usageResponse?.storageUsedMb} MB`);
+console.log(`Uploads this period: ${usageResponse?.currentPeriod?.uploads}`);
 ```
 
 ## Error Handling
 
 ```typescript
-import { ImgSrc, ImgSrcError, RateLimitError, NotFoundError } from '@img-src/sdk';
+import { Imgsrc } from "@img-src/sdk";
+import * as errors from "@img-src/sdk/models/errors";
 
 try {
-  await client.images.get('nonexistent');
+  await client.images.getImage("nonexistent");
 } catch (error) {
-  if (error instanceof NotFoundError) {
-    console.log('Image not found');
-  } else if (error instanceof RateLimitError) {
-    console.log(`Rate limited. Retry after ${error.retryAfter}s`);
-  } else if (error instanceof ImgSrcError) {
-    console.log(`API error: ${error.code} - ${error.message}`);
+  if (error instanceof errors.ImgsrcError) {
+    console.log(`API error: ${error.httpMeta.response.status}`);
+    console.log(`Body: ${error.httpMeta.body}`);
+  } else if (error instanceof errors.SDKValidationError) {
+    console.log(`Validation error: ${error.pretty()}`);
+  } else if (error instanceof errors.ConnectionError) {
+    console.log("Connection failed");
+  } else if (error instanceof errors.RequestTimeoutError) {
+    console.log("Request timed out");
   }
 }
 ```
 
 ## TypeScript Types
 
-All types are exported:
+Types are exported from dedicated modules:
 
 ```typescript
+// Component types (request/response bodies)
 import type {
-  Image,
-  ImageUploadParams,
-  Settings,
+  UploadResponse,
+  ImageMetadata,
+  SearchResponse,
+  CreateSignedUrlRequest,
+  UpdateVisibilityRequest,
+  UpdateSettingsRequest,
+  CreatePresetRequest,
   Preset,
-  ApiKey,
-  Usage
-} from '@img-src/sdk';
+  UsageResponse,
+} from "@img-src/sdk/models/components";
+
+// Operation types (request params, full responses)
+import type {
+  UploadImageRequestBody,
+  UploadImageResponse,
+  ListImagesResponse,
+  SearchImagesResponse,
+} from "@img-src/sdk/models/operations";
 ```
 
 ## Framework Examples
@@ -269,44 +281,42 @@ import type {
 
 ```typescript
 // app/api/upload/route.ts
-import { ImgSrc } from '@img-src/sdk';
-import { NextResponse } from 'next/server';
+import { Imgsrc } from "@img-src/sdk";
+import { NextResponse } from "next/server";
 
-const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+const client = new Imgsrc({ bearerAuth: process.env.IMGSRC_API_KEY! });
 
 export async function POST(request: Request) {
   const formData = await request.formData();
-  const file = formData.get('file') as File;
+  const file = formData.get("file") as File;
 
-  const image = await client.images.upload({
-    file: Buffer.from(await file.arrayBuffer()),
-    path: `uploads/${file.name}`,
-    contentType: file.type
+  const { uploadResponse } = await client.images.uploadImage({
+    file: new Blob([await file.arrayBuffer()]),
+    targetPath: `uploads/${file.name}`,
   });
 
-  return NextResponse.json(image);
+  return NextResponse.json(uploadResponse);
 }
 ```
 
 ### Express
 
 ```typescript
-import express from 'express';
-import multer from 'multer';
-import { ImgSrc } from '@img-src/sdk';
+import express from "express";
+import multer from "multer";
+import { Imgsrc } from "@img-src/sdk";
 
 const app = express();
 const upload = multer();
-const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+const client = new Imgsrc({ bearerAuth: process.env.IMGSRC_API_KEY! });
 
-app.post('/upload', upload.single('file'), async (req, res) => {
-  const image = await client.images.upload({
-    file: req.file!.buffer,
-    path: `uploads/${req.file!.originalname}`,
-    contentType: req.file!.mimetype
+app.post("/upload", upload.single("file"), async (req, res) => {
+  const { uploadResponse } = await client.images.uploadImage({
+    file: new Blob([req.file!.buffer]),
+    targetPath: `uploads/${req.file!.originalname}`,
   });
 
-  res.json(image);
+  res.json(uploadResponse);
 });
 ```
 

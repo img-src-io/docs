@@ -138,10 +138,10 @@ Create an API route to proxy uploads:
 
 ```ts
 // app/api/upload/route.ts
-import { ImgSrc } from '@img-src/sdk';
+import { Imgsrc } from '@img-src/sdk';
 import { NextRequest, NextResponse } from 'next/server';
 
-const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+const client = new Imgsrc({ bearerAuth: process.env.IMGSRC_API_KEY! });
 
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
@@ -153,14 +153,12 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const image = await client.images.upload({
-      file: buffer,
-      path: path || `uploads/${file.name}`,
-      contentType: file.type,
+    const { uploadResponse } = await client.images.uploadImage({
+      file: new Blob([await file.arrayBuffer()]),
+      targetPath: path || `uploads/${file.name}`,
     });
 
-    return NextResponse.json(image);
+    return NextResponse.json(uploadResponse);
   } catch (error) {
     console.error('Upload failed:', error);
     return NextResponse.json({ error: 'Upload failed' }, { status: 500 });
@@ -175,28 +173,29 @@ Fetch image metadata in Server Components:
 ```tsx
 // app/images/[id]/page.tsx
 import Image from 'next/image';
-import { ImgSrc } from '@img-src/sdk';
+import { Imgsrc } from '@img-src/sdk';
 
-const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+const client = new Imgsrc({ bearerAuth: process.env.IMGSRC_API_KEY! });
 
 export default async function ImagePage({ params }: { params: { id: string } }) {
-  const image = await client.images.get(params.id);
+  const { metadataResponse } = await client.images.getImage(params.id);
+  const meta = metadataResponse!.metadata!;
 
   return (
     <div>
       <Image
-        src={`${image.url}?w=800`}
+        src={`${metadataResponse!.urls!.original}?w=800`}
         alt=""
         width={800}
-        height={Math.round((800 / image.width) * image.height)}
+        height={Math.round((800 / (meta.width ?? 800)) * (meta.height ?? 600))}
       />
       <dl>
         <dt>Dimensions</dt>
-        <dd>{image.width} x {image.height}</dd>
+        <dd>{meta.width} x {meta.height}</dd>
         <dt>Size</dt>
-        <dd>{(image.size / 1024).toFixed(1)} KB</dd>
+        <dd>{((meta.size ?? 0) / 1024).toFixed(1)} KB</dd>
         <dt>Type</dt>
-        <dd>{image.content_type}</dd>
+        <dd>{meta.mimeType}</dd>
       </dl>
     </div>
   );
@@ -210,19 +209,19 @@ Build a gallery with Incremental Static Regeneration:
 ```tsx
 // app/gallery/page.tsx
 import Image from 'next/image';
-import { ImgSrc } from '@img-src/sdk';
+import { Imgsrc } from '@img-src/sdk';
 
-const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+const client = new Imgsrc({ bearerAuth: process.env.IMGSRC_API_KEY! });
 
 // Revalidate every hour
 export const revalidate = 3600;
 
 export default async function GalleryPage() {
-  const { images } = await client.images.list({ limit: 50 });
+  const { imageListResponse } = await client.images.listImages(50);
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-      {images.map((image) => (
+      {imageListResponse?.images?.map((image) => (
         <div key={image.id} className="aspect-square relative">
           <Image
             src={`${image.url}?w=400&h=400&fit=cover`}
@@ -325,7 +324,7 @@ Use them in components:
 
 ```tsx
 // Server Component - can use process.env
-const client = new ImgSrc({ apiKey: process.env.IMGSRC_API_KEY! });
+const client = new Imgsrc({ bearerAuth: process.env.IMGSRC_API_KEY! });
 
 // Client Component - use NEXT_PUBLIC_ prefix
 const username = process.env.NEXT_PUBLIC_IMGSRC_USERNAME;
