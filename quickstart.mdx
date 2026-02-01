@@ -129,12 +129,14 @@ print(response.url)
 import (
     "context"
     "fmt"
+    "io"
     "os"
 
-    imgsrc "github.com/img-src-io/sdk-go"
+    sdkgo "github.com/img-src-io/sdk-go"
+    "github.com/img-src-io/sdk-go/models/operations"
 )
 
-client := imgsrc.NewClient("imgsrc_YOUR_API_KEY")
+s := sdkgo.New(sdkgo.WithSecurity("imgsrc_YOUR_API_KEY"))
 
 file, err := os.Open("photo.jpg")
 if err != nil {
@@ -142,15 +144,19 @@ if err != nil {
 }
 defer file.Close()
 
-image, err := client.Images.Upload(context.Background(), &imgsrc.UploadParams{
-    File: file,
-    Path: "photos/vacation.jpg",
+content, _ := io.ReadAll(file)
+res, err := s.Images.Upload(context.Background(), &operations.UploadImageRequestBody{
+    File: &operations.File{
+        FileName: "photo.jpg",
+        Content:  content,
+    },
+    TargetPath: sdkgo.String("photos/vacation.jpg"),
 })
 if err != nil {
     log.Fatal(err)
 }
 
-fmt.Println(image.URL)
+fmt.Println(res.UploadResponse.URL)
 // https://img-src.io/i/username/photos/vacation.jpg
 ```
 
@@ -207,11 +213,11 @@ print(images.items)
 ```
 
 ```go Go
-result, err := client.Images.List(ctx, &imgsrc.ListParams{Limit: 10})
+res, err := s.Images.List(ctx, sdkgo.Int64(10), nil, nil)
 if err != nil {
     log.Fatal(err)
 }
-fmt.Println(result.Images)
+fmt.Println(res.ImageListResponse.Images)
 ```
 
 ```rust Rust
@@ -239,7 +245,7 @@ client.images.delete("img_abc123")
 ```
 
 ```go Go
-err := client.Images.Delete(ctx, "img_abc123")
+_, err := s.Images.Delete(ctx, "img_abc123")
 if err != nil {
     log.Fatal(err)
 }

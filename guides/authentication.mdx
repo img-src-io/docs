@@ -55,7 +55,7 @@ client = ImgSrc(api_key="imgsrc_YOUR_API_KEY")
 ```
 
 ```go Go
-client := imgsrc.NewClient("imgsrc_YOUR_API_KEY")
+s := sdkgo.New(sdkgo.WithSecurity("imgsrc_YOUR_API_KEY"))
 ```
 
 ```rust Rust
@@ -150,7 +150,7 @@ curl -X DELETE https://api.img-src.io/api/v1/settings/api-keys/{key_id} \
 
     ```go
     // Go
-    client := imgsrc.NewClient(os.Getenv("IMGSRC_API_KEY"))
+    s := sdkgo.New(sdkgo.WithSecurity(os.Getenv("IMGSRC_API_KEY")))
     ```
 
     ```rust
