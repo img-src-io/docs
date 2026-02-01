@@ -135,7 +135,9 @@ println!("Dimensions: {:?}x{:?}", res.metadata.width, res.metadata.height);
 ### Delete
 
 ```rust
-images_api::delete_image(&config, "img_abc123").await?;
+let res = images_api::delete_image(&config, "img_abc123").await?;
+println!("Deleted: {}", res.success);
+println!("Paths: {:?}", res.deleted_paths);
 ```
 
 ### Create Signed URL (Pro)
@@ -161,7 +163,8 @@ let req = UpdateVisibilityRequest {
     visibility: "private".to_string(),
 };
 
-images_api::update_visibility(&config, "img_abc123", req).await?;
+let res = images_api::update_visibility(&config, "img_abc123", req).await?;
+println!("Visibility: {}", res.visibility);
 ```
 
 ### Delete Image Path
@@ -189,7 +192,8 @@ let req = UpdateSettingsRequest {
     ..Default::default()
 };
 
-settings_api::update_settings(&config, Some(req)).await?;
+let res = settings_api::update_settings(&config, Some(req)).await?;
+println!("Updated: {}", res.message);
 ```
 
 ## Presets (Pro)
@@ -201,6 +205,9 @@ use std::collections::HashMap;
 
 // List presets
 let res = presets_api::list_presets(&config).await?;
+for preset in &res.presets {
+    println!("{}: {:?}", preset.name, preset.params);
+}
 
 // Create preset
 let mut params = HashMap::new();
@@ -228,7 +235,8 @@ presets_api::update_preset(&config, "preset_id", Some(UpdatePresetRequest {
 })).await?;
 
 // Delete preset
-presets_api::delete_preset(&config, "thumbnail").await?;
+let res = presets_api::delete_preset(&config, "thumbnail").await?;
+println!("Deleted: {}", res.message);
 ```
 
 ## Usage
@@ -287,21 +295,30 @@ All model types are in the `models` module:
 
 ```rust
 use img_src::models::{
-    UploadResponse,
-    MetadataResponse,
-    ImageListResponse,
-    SearchResponse,
-    SignedUrlResponse,
-    UpdateVisibilityRequest,
-    UpdateVisibilityResponse,
-    PathDeleteResponse,
-    SettingsResponse,
-    UpdateSettingsRequest,
-    Preset,
+    // Request types
     CreatePresetRequest,
+    CreateSignedUrlRequest,
     UpdatePresetRequest,
-    UsageResponse,
+    UpdateSettingsRequest,
+    UpdateVisibilityRequest,
+
+    // Response types
+    DeletePresetResponse,
     DeleteResponse,
+    ImageListResponse,
+    ListPresetsResponse,
+    MetadataResponse,
+    PathDeleteResponse,
+    SearchResponse,
+    SettingsResponse,
+    SettingsUpdateResponse,
+    SignedUrlResponse,
+    UpdateVisibilityResponse,
+    UploadResponse,
+    UsageResponse,
+
+    // Data types
+    Preset,
 };
 ```
 

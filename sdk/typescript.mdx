@@ -50,6 +50,11 @@ const { uploadResponse } = await client.images.uploadImage({
 
 console.log(uploadResponse?.url);
 // https://img-src.io/i/username/photos/vacation.jpg
+console.log(uploadResponse?.id);         // "a1b2c3d4e5f67890"
+console.log(uploadResponse?.size);       // 102400 (bytes)
+console.log(uploadResponse?.format);     // "jpeg"
+console.log(uploadResponse?.isNew);      // true
+console.log(uploadResponse?.visibility); // "public"
 ```
 
 ## Configuration
@@ -141,7 +146,14 @@ for (const result of searchResponse?.results ?? []) {
 
 ```typescript
 const { metadataResponse } = await client.images.getImage("img_abc123");
+
 console.log(metadataResponse?.metadata?.width, metadataResponse?.metadata?.height);
+console.log(metadataResponse?.metadata?.mimeType);          // "image/jpeg"
+console.log(metadataResponse?.metadata?.originalFilename);   // "photo.jpg"
+console.log(metadataResponse?.metadata?.dominantColor);      // "3a7bd5" (hex without #)
+console.log(metadataResponse?.metadata?.uploadedAt);         // Date object
+console.log(metadataResponse?.visibility);                   // "public"
+console.log(metadataResponse?.urls);                         // { original, webp, avif, jpeg, png }
 ```
 
 ### Delete
@@ -222,28 +234,86 @@ await client.presets.deletePreset("preset_id");
 const { usageResponse } = await client.usage.getUsage();
 
 console.log(`Plan: ${usageResponse?.planName}`);
-console.log(`Storage: ${usageResponse?.storageUsedMb} MB`);
-console.log(`Uploads this period: ${usageResponse?.currentPeriod?.uploads}`);
+console.log(`Status: ${usageResponse?.planStatus}`);         // "active" | "cancelling" | "expired"
+console.log(`Images: ${usageResponse?.totalImages}`);
+console.log(`Storage: ${usageResponse?.storageUsedGb} GB`);  // also storageUsedMb, storageUsedBytes
+
+// Plan limits
+const limits = usageResponse?.planLimits;
+console.log(`Max uploads/month: ${limits?.maxUploadsPerMonth}`);
+console.log(`Max storage: ${limits?.maxStorageBytes} bytes`);
+
+// Current period usage
+const period = usageResponse?.currentPeriod;
+console.log(`Period: ${period?.period}`);                    // "2025-01"
+console.log(`Uploads: ${period?.uploads}`);
+console.log(`Bandwidth: ${period?.bandwidthBytes} bytes`);
+console.log(`Transformations: ${period?.transformations}`);
+
+// Remaining credits
+const credits = usageResponse?.credits;
+console.log(`API requests left: ${credits?.apiRequests}`);
+console.log(`Transformations left: ${credits?.transformations}`);
+```
+
+## HTTP Metadata
+
+<Tip>
+  All successful responses include an `httpMeta` field containing the raw `Request` and `Response` objects.
+  This is useful for debugging or accessing response headers.
+</Tip>
+
+```typescript
+const result = await client.images.getImage("img_abc123");
+
+// Access raw HTTP metadata
+const { response, request } = result.httpMeta;
+console.log(response.status);              // 200
+console.log(response.headers.get("x-ratelimit-remaining"));
 ```
 
 ## Error Handling
 
 ```typescript
-import { Imgsrc } from "@img-src/sdk";
 import * as errors from "@img-src/sdk/models/errors";
 
 try {
   await client.images.getImage("nonexistent");
 } catch (error) {
-  if (error instanceof errors.ImgsrcError) {
-    console.log(`API error: ${error.httpMeta.response.status}`);
+  // Structured API error (e.g., 401, 403, 404)
+  if (error instanceof errors.ErrorResponse) {
+    console.log(`Code: ${error.error.code}`);       // "NOT_FOUND"
+    console.log(`Message: ${error.error.message}`);  // "Image not found"
+    console.log(`Status: ${error.error.status}`);    // 404
+  }
+  // Unstructured HTTP error (non-JSON response)
+  else if (error instanceof errors.ImgsrcDefaultError) {
+    console.log(`HTTP ${error.httpMeta.response.status}`);
     console.log(`Body: ${error.httpMeta.body}`);
-  } else if (error instanceof errors.SDKValidationError) {
-    console.log(`Validation error: ${error.pretty()}`);
-  } else if (error instanceof errors.ConnectionError) {
-    console.log("Connection failed");
-  } else if (error instanceof errors.RequestTimeoutError) {
+  }
+  // Response shape mismatch
+  else if (error instanceof errors.ResponseValidationError) {
+    console.log(`Validation: ${error.pretty()}`);
+  }
+  // Request was aborted
+  else if (error instanceof errors.RequestAbortedError) {
+    console.log("Request aborted");
+  }
+  // Request timed out
+  else if (error instanceof errors.RequestTimeoutError) {
     console.log("Request timed out");
+  }
+  // Invalid request inputs
+  else if (error instanceof errors.InvalidRequestError) {
+    console.log(`Invalid request: ${error.message}`);
+  }
+  // Network / connection errors
+  else if (error instanceof errors.ConnectionError) {
+    console.log("Connection failed");
+  }
+  // Catch-all for unexpected errors
+  else if (error instanceof errors.UnexpectedClientError) {
+    console.log(`Unexpected: ${error.message}`);
   }
 }
 ```
@@ -257,13 +327,28 @@ Types are exported from dedicated modules:
 import type {
   UploadResponse,
   ImageMetadata,
+  MetadataResponse,
+  ImageListResponse,
   SearchResponse,
+  DeleteResponse,
+  SignedUrlResponse,
+  UpdateVisibilityResponse,
+  PathDeleteResponse,
+  SettingsResponse,
+  SettingsUpdateResponse,
+  ListPresetsResponse,
+  DeletePresetResponse,
+  Preset,
+  UsageResponse,
+  PlanLimits,
+  CurrentPeriod,
+  Credits,
+  HTTPMetadata,
   CreateSignedUrlRequest,
   UpdateVisibilityRequest,
   UpdateSettingsRequest,
   CreatePresetRequest,
-  Preset,
-  UsageResponse,
+  UpdatePresetRequest,
 } from "@img-src/sdk/models/components";
 
 // Operation types (request params, full responses)
@@ -272,7 +357,34 @@ import type {
   UploadImageResponse,
   ListImagesResponse,
   SearchImagesResponse,
+  GetImageResponse,
+  DeleteImageResponse,
+  CreateSignedUrlResponse,
+  UpdateImageVisibilityResponse,
+  DeleteImagePathResponse,
+  GetSettingsResponse,
+  UpdateSettingsResponse,
+  ListPresetsResponse as ListPresetsOpResponse,
+  CreatePresetResponse,
+  GetPresetResponse,
+  UpdatePresetResponse,
+  DeletePresetResponse as DeletePresetOpResponse,
+  GetUsageResponse,
 } from "@img-src/sdk/models/operations";
+
+// Error types
+import {
+  ErrorResponse,
+  ImgsrcDefaultError,
+  ImgsrcError,
+  ResponseValidationError,
+  SDKValidationError,
+  ConnectionError,
+  RequestTimeoutError,
+  RequestAbortedError,
+  InvalidRequestError,
+  UnexpectedClientError,
+} from "@img-src/sdk/models/errors";
 ```
 
 ## Framework Examples

@@ -121,6 +121,13 @@ res = client.images.list_images(limit=20, offset=40)
 
 # Filter by path prefix
 res = client.images.list_images(path="photos/")
+
+# Auto-pagination with next()
+res = client.images.list_images(limit=20)
+while res is not None:
+    for image in res.image_list_response.images:
+        print(image.url)
+    res = res.next()
 ```
 
 ### Search
@@ -141,7 +148,9 @@ print(f"Dimensions: {res.metadata_response.metadata.width}x{res.metadata_respons
 ### Delete
 
 ```python
-client.images.delete_image(id="img_abc123")
+res = client.images.delete_image(id="img_abc123")
+print(res.delete_response.success)        # True
+print(res.delete_response.deleted_paths)  # ["photos/vacation.jpg"]
 ```
 
 ### Create Signed URL (Pro)
@@ -152,12 +161,26 @@ res = client.images.create_signed_url(
     expires_in_seconds=3600,  # 1 hour (default)
 )
 print(res.signed_url_response.signed_url)
+
+# With transformation parameters
+res = client.images.create_signed_url(
+    id="img_abc123",
+    expires_in_seconds=3600,
+    transformation=models.Transformation(
+        width=800,
+        height=600,
+        fit="cover",
+        quality=85,
+    ),
+)
+print(res.signed_url_response.signed_url)
 ```
 
 ### Update Visibility (Pro)
 
 ```python
-client.images.update_visibility(id="img_abc123", visibility="private")
+res = client.images.update_visibility(id="img_abc123", visibility="private")
+print(res.update_visibility_response.visibility)  # "private"
 ```
 
 ### Delete Image Path
@@ -175,11 +198,12 @@ res = client.settings.get_settings()
 print(res.settings_response.settings.default_quality)
 
 # Update settings
-client.settings.update_settings(request=models.UpdateSettingsRequest(
+res = client.settings.update_settings(request=models.UpdateSettingsRequest(
     default_quality=85,
     default_fit_mode="cover",
     delivery_formats=["webp", "jpeg"],
 ))
+print(res.settings_update_response.message)  # "Settings updated successfully"
 ```
 
 ## Presets (Pro)
@@ -189,24 +213,30 @@ from img_src import models
 
 # List presets
 res = client.presets.list_presets()
+for preset in res.list_presets_response.presets:
+    print(f"{preset.name}: {preset.params}")
 
 # Create preset
 res = client.presets.create_preset(request=models.CreatePresetRequest(
     name="thumbnail",
     params={"w": 200, "h": 200, "fit": "cover"},
 ))
+print(res.preset.name)  # "thumbnail"
 
 # Get preset
 res = client.presets.get_preset(id="preset_id")
+print(res.preset.name)
 
 # Update preset
-client.presets.update_preset(
+res = client.presets.update_preset(
     id="preset_id",
     params={"w": 250, "h": 250, "fit": "cover"},
 )
+print(res.preset.name)
 
 # Delete preset
-client.presets.delete_preset(name="thumbnail")
+res = client.presets.delete_preset(name="thumbnail")
+print(res.delete_preset_response.message)  # "Preset deleted successfully"
 ```
 
 ## Usage
@@ -222,14 +252,21 @@ print(f"Uploads this period: {res.usage_response.current_period.uploads}")
 ## Error Handling
 
 ```python
-from img_src import Imgsrc
-from img_src.errors import ImgsrcError, ImgsrcDefaultError
+from img_src.errors import ErrorResponse, ImgsrcDefaultError, ImgsrcError
 
 try:
     client.images.get_image(id="nonexistent")
+except ErrorResponse as e:
+    # Structured API error (e.g., 401, 403, 404)
+    print(f"Code: {e.data.error.code}")       # "NOT_FOUND"
+    print(f"Message: {e.data.error.message}")  # "Image not found"
+    print(f"Status: {e.data.error.status}")    # 404
 except ImgsrcDefaultError as e:
-    print(f"API error: {e}")
+    # Unstructured HTTP error (non-JSON response)
+    print(f"HTTP error: {e.status_code}")
+    print(f"Body: {e.body}")
 except ImgsrcError as e:
+    # Base SDK error (catch-all for API errors)
     print(f"SDK error: {e}")
 except Exception as e:
     print(f"Unexpected error: {e}")
@@ -356,15 +393,47 @@ The SDK includes full type hints for IDE support:
 ```python
 from img_src import models
 
-# Component types
+# Wrapper types (returned by SDK methods, include http_meta)
+from img_src.models import (
+    UploadImageResponse,
+    ListImagesResponse,
+    GetImageResponse,
+    DeleteImageResponse,
+    CreateSignedURLResponse,
+    UpdateVisibilityResponse1,
+    DeleteImagePathResponse,
+    SearchImagesResponse,
+)
+
+# Inner component types (data models)
 from img_src.models import (
     UploadResponse,
     ImageListResponse,
     SearchResponse,
     MetadataResponse,
+    ImageMetadata,
+    DeleteResponse,
+    SignedURLResponse,
+    UpdateVisibilityResponse,
+    PathDeleteResponse,
     SettingsResponse,
-    UsageResponse,
+    SettingsUpdateResponse,
+    ListPresetsResponse,
+    DeletePresetResponse,
     Preset,
+    UsageResponse,
+    PlanLimits,
+    CurrentPeriod,
+    Credits,
+    HTTPMetadata,
+    Transformation,
+)
+
+# Error types
+from img_src.errors import (
+    ErrorResponse,
+    ImgsrcDefaultError,
+    ImgsrcError,
 )
 ```
 
