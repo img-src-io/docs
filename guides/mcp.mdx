@@ -1,0 +1,400 @@
+---
+title: MCP Server
+description: "Use img-src with AI assistants through Model Context Protocol"
+---
+
+# MCP Server
+
+The img-src MCP (Model Context Protocol) server enables AI assistants like Claude to interact with your img-src.io account directly. Upload, search, list, and manage images through natural language.
+
+## Overview
+
+MCP is an open protocol that allows AI assistants to securely access external tools and data sources. The img-src MCP server provides 8 tools for complete image management:
+
+| Tool | Description |
+|------|-------------|
+| `upload_image` | Upload image from local file or URL |
+| `list_images` | List images in folder |
+| `search_images` | Search by filename/path |
+| `get_image` | Get image metadata |
+| `delete_image` | Delete an image |
+| `get_usage` | View usage statistics |
+| `get_settings` | Get account settings |
+| `get_cdn_url` | Generate CDN URL with transforms |
+
+## Installation
+
+Install globally via pnpm:
+
+```bash
+pnpm add -g @img-src/mcp-server
+```
+
+Or run directly without installation:
+
+```bash
+pnpm dlx @img-src/mcp-server
+```
+
+## Configuration
+
+### Getting an API Key
+
+1. Sign in to [img-src.io](https://img-src.io)
+2. Navigate to [Settings](https://img-src.io/settings)
+3. Click **Create API Key**
+4. Copy the key (starts with `imgsrc_`)
+
+<Warning>
+  The full API key is only shown once. Store it securely.
+</Warning>
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `IMG_SRC_API_KEY` | Yes | Your API key (starts with `imgsrc_`) |
+| `IMG_SRC_API_URL` | No | API base URL (default: `https://api.img-src.io`) |
+
+### Claude Desktop
+
+Add to your Claude Desktop configuration file:
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "img-src": {
+      "command": "npx",
+      "args": ["@img-src/mcp-server"],
+      "env": {
+        "IMG_SRC_API_KEY": "imgsrc_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+### Claude Code
+
+Add to your Claude Code settings:
+
+```json
+{
+  "mcpServers": {
+    "img-src": {
+      "command": "npx",
+      "args": ["@img-src/mcp-server"],
+      "env": {
+        "IMG_SRC_API_KEY": "imgsrc_your_api_key_here"
+      }
+    }
+  }
+}
+```
+
+After configuration, restart Claude Desktop or Claude Code. The img-src tools will appear in the available tools list.
+
+## Available Tools
+
+### upload_image
+
+Upload an image from a local file or URL to your img-src.io account.
+
+**Parameters:**
+- `file_path` (recommended): Absolute path to local image file (e.g., `/Users/name/photo.png`)
+- `url`: URL of image to download and upload (for web images)
+- `data`: Base64-encoded image data
+- `mimeType`: MIME type (required only when using `data`, e.g., `image/png`)
+- `target_path` (optional): Folder path to store the image (e.g., `photos/2024`). Filename is determined from source.
+
+<Warning>
+  **Prefer `file_path` over `data`**: Base64-encoded data consumes significant context length and can cause issues with large images. Always use `file_path` for local files when possible.
+</Warning>
+
+<Info>
+  Provide one of: `file_path` (preferred), `url`, or `data`+`mimeType`.
+</Info>
+
+**Supported formats:** JPEG, PNG, GIF, WebP, AVIF, BMP, TIFF, ICO, SVG, HEIC/HEIF
+
+**Example prompts:**
+```
+Upload /Users/me/photos/sunset.jpg to img-src in the photos/vacation folder
+```
+
+```
+Upload the screenshot at ~/Desktop/screenshot.png
+```
+
+```
+Upload https://example.com/image.png to my account
+```
+
+<Info>
+  Images are automatically deduplicated by content hash. Uploading the same image twice won't create duplicates.
+</Info>
+
+### list_images
+
+List images in your account, optionally within a specific folder.
+
+**Parameters:**
+- `folder` (optional): Folder path to list
+- `limit` (optional): Max items to return (default: 50, max: 100)
+- `offset` (optional): Items to skip for pagination
+
+**Example prompt:**
+```
+List my images in the photos/vacation folder
+```
+
+### search_images
+
+Search for images by filename or path.
+
+**Parameters:**
+- `query` (required): Search query
+- `limit` (optional): Max results (default: 20, max: 100)
+- `offset` (optional): Results to skip
+
+**Example prompt:**
+```
+Search for images containing "beach"
+```
+
+### get_image
+
+Get detailed metadata for a specific image.
+
+**Parameters:**
+- `id` (required): Image ID (16-character hash prefix, e.g., `abcdef1234567890`)
+
+**Example prompt:**
+```
+Get details for image abcdef1234567890
+```
+
+### delete_image
+
+Permanently delete an image.
+
+**Parameters:**
+- `id` (required): Image ID to delete (16-character hash prefix)
+
+**Example prompt:**
+```
+Delete the image with ID abcdef1234567890
+```
+
+<Warning>
+  Deletion is permanent. The image will no longer be accessible via CDN URLs.
+</Warning>
+
+### get_usage
+
+View your current usage statistics.
+
+**Example prompt:**
+```
+Show my img-src usage stats
+```
+
+Returns uploads, storage, bandwidth, and API request usage against your plan limits.
+
+### get_settings
+
+Get your account settings and configuration.
+
+**Example prompt:**
+```
+What are my img-src account settings?
+```
+
+### get_cdn_url
+
+Generate a CDN URL with optional image transformations.
+
+**Parameters:**
+- `username` (required): Image owner's username
+- `filepath` (required): Image path
+- `width` (optional): Resize width in pixels
+- `height` (optional): Resize height in pixels
+- `fit` (optional): `cover`, `contain`, `fill`, or `scale-down`
+- `quality` (optional): 1-100 (default: 80)
+- `format` (optional): `webp`, `avif`, `jpeg`, or `png`
+
+**Example prompt:**
+```
+Generate a CDN URL for john/photos/beach.jpg resized to 800x600 in WebP format
+```
+
+## Resources
+
+The MCP server exposes your images as resources that AI assistants can browse and reference.
+
+**URI Format:** `imgsrc://images/{imageId}`
+
+Resources allow AI assistants to:
+- List all images in your account
+- Access image metadata directly by ID
+- Reference images in conversations without re-fetching
+
+**Example usage:**
+```
+Show me the metadata for imgsrc://images/abcdef1234567890
+```
+
+## Prompts
+
+The MCP server provides pre-built prompt templates for common workflows.
+
+### upload-and-share
+
+Upload an image and get shareable CDN URLs.
+
+**Arguments:**
+- `imageUrl` (required): URL of image to upload
+- `width` (optional): Resize width
+
+**Example:**
+```
+Use the upload-and-share prompt with https://example.com/photo.jpg
+```
+
+### check-usage
+
+Check account usage and storage status.
+
+**Example:**
+```
+Use the check-usage prompt
+```
+
+### find-images
+
+Search for images by keyword.
+
+**Arguments:**
+- `query` (required): Search keyword
+
+**Example:**
+```
+Use the find-images prompt with "vacation"
+```
+
+## Example Conversations
+
+### Upload and share an image
+
+> **User:** Upload ~/Photos/sunset.jpg to img-src and give me a resized URL
+
+> **Claude:** I'll upload that image and generate a CDN URL for you.
+>
+> Image uploaded successfully! Here's a resized CDN URL:
+> `https://img-src.io/i/yourname/sunset.webp?w=1200&q=85`
+
+### Search and organize
+
+> **User:** Find all my beach photos
+
+> **Claude:** Found 5 beach photos:
+> 1. photos/vacation/beach-sunset.jpg
+> 2. photos/summer/beach-party.png
+> 3. travel/hawaii/beach-view.webp
+> ...
+
+### Check usage
+
+> **User:** How much storage am I using?
+
+> **Claude:** Your img-src.io usage:
+> - Storage: 245 MB / 500 MB (49%)
+> - Uploads: 67 / 100 this month
+> - Bandwidth: 1.2 GB / 5 GB
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Tool not appearing in Claude">
+    1. Verify the configuration file path is correct
+    2. Check that `IMG_SRC_API_KEY` is set
+    3. Restart Claude Desktop or Claude Code
+    4. Check Claude's MCP logs for errors
+  </Accordion>
+
+  <Accordion title="Authentication errors">
+    Verify your API key:
+    1. Starts with `imgsrc_`
+    2. Has not expired
+    3. Has not been deleted
+    4. Is copied correctly (no extra spaces)
+  </Accordion>
+
+  <Accordion title="Upload failures">
+    Common causes:
+    - Image URL is not publicly accessible
+    - Image size exceeds 5 MB limit
+    - Unsupported image format
+    - Network timeout (30 second limit)
+  </Accordion>
+
+  <Accordion title="Rate limiting">
+    If you see rate limit errors:
+    - Free plan: 100 requests/minute
+    - Pro plan: 500 requests/minute
+
+    Wait for the rate limit to reset or upgrade your plan.
+  </Accordion>
+</AccordionGroup>
+
+## Security Considerations
+
+<Warning>
+  Never share your API key or commit it to version control.
+</Warning>
+
+### API Key Security
+
+- **API key protection:** Store your API key securely. Use environment variables, not hardcoded values.
+- **Scoped permissions:** Create keys with minimal required scopes. Use read-only keys when write access isn't needed.
+- **Key rotation:** Rotate API keys periodically and delete unused keys.
+- **Monitor usage:** Check `last_used_at` in Settings > API Keys to detect unauthorized access.
+
+### SSRF Protection
+
+When uploading images via URL, the MCP server includes built-in protections against Server-Side Request Forgery (SSRF):
+
+- **Localhost blocking:** Blocks `localhost`, `127.0.0.1`, `0.0.0.0`, `::1`, and other localhost variants
+- **Cloud metadata protection:** Blocks cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`)
+- **Private network blocking:** Blocks RFC 1918 private IP ranges (`10.x.x.x`, `172.16-31.x.x`, `192.168.x.x`)
+- **Link-local blocking:** Blocks link-local addresses (`169.254.x.x`)
+- **Protocol restriction:** Only allows `http://` and `https://` protocols
+
+See the [Authentication guide](/guides/authentication) for more security best practices.
+
+## Development
+
+To run the MCP server locally for development:
+
+```bash
+# Clone and install
+git clone https://github.com/img-src-io/mcp
+cd mcp
+pnpm install
+
+# Build
+pnpm build
+
+# Run with your API key
+IMG_SRC_API_KEY=imgsrc_xxx pnpm start
+
+# Type check
+pnpm type-check
+
+# Run tests
+pnpm test
+```

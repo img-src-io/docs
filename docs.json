@@ -39,7 +39,8 @@
             "pages": [
               "guides/image-transformation",
               "guides/authentication",
-              "guides/presets"
+              "guides/presets",
+              "guides/mcp"
             ]
           },
           {
