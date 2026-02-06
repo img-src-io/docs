@@ -34,6 +34,7 @@ After publishing, each image shows **Available Formats** with ready-to-use CDN U
 | **JPEG** | `https://img-src.io/i/username/photo.jpg` |
 | **PNG** | `https://img-src.io/i/username/photo.png` |
 | **AVIF** | `https://img-src.io/i/username/photo.avif` |
+| **JXL** ⚠️ | `https://img-src.io/i/username/photo.jxl` |
 
 Click the copy icon next to any URL to copy it to your clipboard.
 
@@ -68,6 +69,10 @@ https://img-src.io/i/username/photo.webp?w=800&h=600&fit=cover&q=85
 <Tip>
   Output format is determined by the file extension in the URL. Change `.jpg` to `.webp` or `.avif` to convert formats.
 </Tip>
+
+<Warning>
+  JXL format has very limited browser support. See the [image transformation guide](/guides/image-transformation#output-format) for details and fallback strategies.
+</Warning>
 
 ---
 

@@ -124,6 +124,7 @@ The output format is determined by the file extension in the URL. You can serve 
 | **Original** | (same as uploaded) | No conversion, fastest delivery |
 | **WebP** | `.webp` | General use, best compression |
 | **AVIF** | `.avif` | Maximum compression |
+| **JXL** | `.jxl` | Next-gen compression (limited browser support) |
 | **JPEG** | `.jpg`, `.jpeg` | Universal compatibility |
 | **PNG** | `.png` | Transparency, lossless |
 
@@ -143,6 +144,11 @@ The output format is determined by the file extension in the URL. You can serve 
   - Maximum resolution: 8 megapixels (~3500×2300)
   - Maximum dimension: 4000px on either side
   - Larger images are automatically scaled down before AVIF encoding
+</Warning>
+
+<Warning>
+  **JXL (JPEG XL) Browser Compatibility:**
+  JXL is a next-generation format with very limited browser support. Currently only Safari 17+ offers partial support, and most browsers (Chrome, Firefox, Edge) do not display JXL images by default. Check [browser compatibility](https://caniuse.com/jpegxl) before using JXL in production. Consider using `<picture>` with WebP or JPEG fallback.
 </Warning>
 
 ### Aspect Ratio
@@ -303,7 +309,7 @@ img-src accepts these input formats:
 
 - **Common**: JPEG, PNG, WebP, GIF
 - **Professional**: TIFF, BMP, ICO, SVG
-- **Modern**: HEIC/HEIF, AVIF
+- **Modern**: HEIC/HEIF, AVIF, JXL
 - **Specialized**: TGA, PNM, QOI, HDR, EXR
 
 ## Caching
