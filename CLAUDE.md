@@ -71,6 +71,19 @@ api: "METHOD /api/v1/endpoint"
 - `<Info>`, `<Warning>`, `<Tip>`, `<Note>` — Callout blocks
 - `<AccordionGroup>` / `<Accordion>` — Expandable sections
 - `<RequestExample>` / `<ResponseExample>` — API request/response pairs
+- `<Tooltip tip="..." cta="..." href="...">text</Tooltip>` — Inline tooltips with optional CTA link
+
+### Browser Compatibility Warnings
+
+For features with limited browser support (e.g., JXL format), use inline `<Tooltip>` components instead of `<Warning>` blocks to avoid disrupting reading flow:
+
+```mdx
+| **JXL** <Tooltip tip="Very limited browser support (~12%)..." cta="Check browser support" href="https://caniuse.com/jpegxl">(?)</Tooltip> | `.jxl` | Next-gen compression |
+```
+
+- Place tooltips inline with the feature name in tables
+- Use "(?)" as the tooltip trigger text
+- Link to caniuse.com for detailed compatibility data
 
 ### Multi-Language Pattern
 
