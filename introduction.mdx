@@ -126,14 +126,9 @@ Output format is determined by the file extension in the CDN URL. You can also s
 | **Original** | (same as uploaded) | No conversion, fastest delivery |
 | **WebP** | `.webp` | General use, best compression |
 | **AVIF** | `.avif` | Maximum compression (max 8MP) |
-| **JXL** | `.jxl` | Next-gen compression (limited browser support) |
+| **JXL** <Tooltip tip="Very limited browser support (~12%). Only Safari 17+ partial support. Chrome, Firefox, Edge do not display JXL by default. Use with WebP/JPEG fallback." cta="Check browser support" href="https://caniuse.com/jpegxl">(?)</Tooltip> | `.jxl` | Next-gen compression |
 | **JPEG** | `.jpg`, `.jpeg` | Universal compatibility |
 | **PNG** | `.png` | Transparency, lossless |
-
-<Warning>
-  **JXL (JPEG XL) Browser Compatibility:**
-  JXL is a next-generation format with very limited browser support. Currently only Safari 17+ offers partial support, and most browsers (Chrome, Firefox, Edge) do not display JXL images by default. Check [browser compatibility](https://caniuse.com/jpegxl) before using JXL in production. Consider using `<picture>` with WebP or JPEG fallback.
-</Warning>
 
 ```html
 <!-- Serve original format (no conversion) -->
