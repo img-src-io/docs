@@ -97,31 +97,36 @@ curl -X POST https://api.img-src.io/api/v1/images \
 ```
 
 ```typescript TypeScript
-import { ImgSrc } from '@img-src/sdk';
+import { Imgsrc } from "@img-src/sdk";
+import fs from "fs";
 
-const client = new ImgSrc({ apiKey: 'imgsrc_YOUR_API_KEY' });
+const client = new Imgsrc({ bearerAuth: "imgsrc_YOUR_API_KEY" });
 
-const response = await client.images.upload({
-  file: fs.createReadStream('photo.jpg'),
-  path: 'photos/vacation.jpg'
+const { uploadResponse } = await client.images.uploadImage({
+  file: {
+    fileName: "photo.jpg",
+    content: fs.readFileSync("photo.jpg"),
+  },
+  targetPath: "photos/vacation.jpg",
 });
 
-console.log(response.url);
+console.log(uploadResponse?.url);
 // https://img-src.io/i/username/photos/vacation.jpg
 ```
 
 ```python Python
-from img_src import ImgSrc
+import os
+from img_src import Imgsrc, models
 
-client = ImgSrc(api_key="imgsrc_YOUR_API_KEY")
+client = Imgsrc(bearer_auth="imgsrc_YOUR_API_KEY")
 
 with open("photo.jpg", "rb") as f:
-    response = client.images.upload(
-        file=f,
-        path="photos/vacation.jpg"
-    )
+    res = client.images.upload_image(request=models.UploadImageRequestBody(
+        file=models.File(file_name="photo.jpg", content=f.read()),
+        target_path="photos/vacation.jpg",
+    ))
 
-print(response.url)
+print(res.upload_response.url)
 # https://img-src.io/i/username/photos/vacation.jpg
 ```
 
@@ -161,18 +166,20 @@ fmt.Println(res.UploadResponse.URL)
 ```
 
 ```rust Rust
-use imgsrc::Client;
+use img_src::apis::{configuration::Configuration, images_api};
+use std::path::PathBuf;
 
-let client = Client::new("imgsrc_YOUR_API_KEY");
+let mut config = Configuration::new();
+config.bearer_access_token = Some("imgsrc_YOUR_API_KEY".to_string());
 
-let image = client
-    .images()
-    .upload(Path::new("photo.jpg"))
-    .path("photos/vacation.jpg")
-    .send()
-    .await?;
+let res = images_api::upload_image(
+    &config,
+    Some(PathBuf::from("photo.jpg")),
+    Some("photos/vacation.jpg"),
+    None,
+).await?;
 
-println!("{}", image.url);
+println!("{}", res.url);
 // https://img-src.io/i/username/photos/vacation.jpg
 ```
 
@@ -203,13 +210,13 @@ curl https://api.img-src.io/api/v1/images \
 ```
 
 ```typescript TypeScript
-const images = await client.images.list({ limit: 10 });
-console.log(images.items);
+const { imageListResponse } = await client.images.listImages(10);
+console.log(imageListResponse?.images);
 ```
 
 ```python Python
-images = client.images.list(limit=10)
-print(images.items)
+res = client.images.list_images(limit=10)
+print(res.image_list_response.images)
 ```
 
 ```go Go
@@ -221,8 +228,8 @@ fmt.Println(res.ImageListResponse.Images)
 ```
 
 ```rust Rust
-let result = client.images().list().limit(10).send().await?;
-println!("{:?}", result.images);
+let res = images_api::list_images(&config, Some(10), None, None).await?;
+println!("{:?}", res.images);
 ```
 
 </CodeGroup>
@@ -237,11 +244,11 @@ curl -X DELETE https://api.img-src.io/api/v1/images/img_abc123 \
 ```
 
 ```typescript TypeScript
-await client.images.delete('img_abc123');
+await client.images.deleteImage("img_abc123");
 ```
 
 ```python Python
-client.images.delete("img_abc123")
+client.images.delete_image(id="img_abc123")
 ```
 
 ```go Go
@@ -252,7 +259,7 @@ if err != nil {
 ```
 
 ```rust Rust
-client.images().delete("img_abc123").await?;
+images_api::delete_image(&config, "img_abc123").await?;
 ```
 
 </CodeGroup>
